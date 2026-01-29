@@ -1,0 +1,8 @@
+.env
+.env.*
+*.json
+phone_list.txt
+__pycache__/
+*.pyc
+recordings/
+gyni_results.xlsx
