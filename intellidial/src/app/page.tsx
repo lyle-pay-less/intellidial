@@ -148,9 +148,9 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Navigation */}
+      {/* Navigation — glass on scroll */}
       <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled ? "bg-white/95 backdrop-blur-md shadow-sm" : "bg-transparent"
+        scrolled ? "bg-white/90 backdrop-blur-xl shadow-lg shadow-slate-900/5 border-b border-slate-200/50" : "bg-transparent"
       }`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 md:h-20">
@@ -159,7 +159,7 @@ export default function LandingPage() {
               <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
                 <Phone className="w-4 h-4 text-white" />
               </div>
-              <span className="text-xl font-bold text-slate-900">Intellidial</span>
+              <span className="font-display text-xl font-bold text-slate-900">Intellidial</span>
             </div>
 
             {/* Desktop Nav */}
@@ -220,24 +220,30 @@ export default function LandingPage() {
         )}
       </nav>
 
-      {/* Hero Section */}
+      {/* Hero Section — next-level: orbs, gradient mesh, display font */}
       <section className="relative pt-28 md:pt-36 pb-16 md:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_80%_at_50%_0%,rgba(20,184,166,0.06),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_80%_at_50%_0%,rgba(20,184,166,0.1),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_80%_20%,rgba(34,211,238,0.06),transparent)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_40%_at_20%_80%,rgba(94,234,212,0.05),transparent)]" />
+        {/* Floating orbs */}
+        <div className="absolute top-1/4 left-1/4 w-72 h-72 rounded-full bg-teal-400/20 blur-[80px] animate-float pointer-events-none" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-cyan-400/15 blur-[100px] animate-float pointer-events-none" style={{ animationDelay: "1.5s" }} />
+        <div className="absolute top-1/2 right-1/3 w-48 h-48 rounded-full bg-emerald-400/10 blur-[60px] animate-float pointer-events-none" style={{ animationDelay: "3s" }} />
         <div className="max-w-6xl mx-auto relative">
           <div className="text-center max-w-4xl mx-auto">
             {/* Badge */}
             <FadeInOnScroll>
-              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-medium mb-6 border border-teal-100">
-                <Zap className="w-4 h-4" />
+              <div className="inline-flex items-center gap-2 bg-teal-50/90 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-6 border border-teal-200/80 shadow-lg shadow-teal-500/5">
+                <Zap className="w-4 h-4 text-cyan-600" />
                 AI-Powered Phone Research
               </div>
             </FadeInOnScroll>
 
             <FadeInOnScroll delay={100}>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-slate-900 leading-tight">
+              <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold text-slate-900 leading-tight tracking-tight">
                 AI That Makes the Calls
-                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-teal-600 to-emerald-600 mt-2">
-                  So You Don't Have To
+                <span className="block text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-cyan-600 to-emerald-500 mt-2 animate-gradient-shift">
+                  So You Don&apos;t Have To
                 </span>
               </h1>
             </FadeInOnScroll>
@@ -253,7 +259,7 @@ export default function LandingPage() {
               <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
                 <a
                   href="#contact"
-                  className="group bg-gradient-to-r from-teal-600 to-teal-700 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-teal-700 hover:to-teal-800 transition-all shadow-xl shadow-teal-600/20 hover:shadow-2xl hover:shadow-teal-600/30 hover:-translate-y-1 flex items-center justify-center gap-2"
+                  className="group font-display bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:from-teal-500 hover:to-cyan-500 transition-all shadow-xl shadow-teal-600/25 hover:shadow-[0_0_40px_rgba(20,184,166,0.4)] hover:-translate-y-1 flex items-center justify-center gap-2 border border-white/20"
                 >
                   Start Free Pilot
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -287,17 +293,15 @@ export default function LandingPage() {
             </FadeInOnScroll>
           </div>
 
-          {/* Hero Product Image */}
+          {/* Hero Product Image — futuristic glow */}
           <FadeInOnScroll delay={500}>
             <div className="mt-16 relative">
-              {/* Glow effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/20 via-emerald-400/20 to-cyan-400/20 rounded-3xl blur-3xl"></div>
-              
-              <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-emerald-400/25 rounded-3xl blur-3xl" />
+              <div className="relative rounded-2xl ring-1 ring-slate-200/50 ring-inset overflow-hidden shadow-2xl shadow-slate-900/10">
                 <img 
                   src="/dashboard.jpeg" 
                   alt="Intellidial Dashboard - Business Call Analytics showing call progress, company data, and results" 
-                  className="w-full max-w-4xl mx-auto rounded-2xl shadow-2xl shadow-slate-300/50 border border-slate-200"
+                  className="w-full max-w-4xl mx-auto rounded-2xl"
                 />
               </div>
             </div>
@@ -384,10 +388,10 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <FadeInOnScroll>
             <div className="text-center mb-12">
-              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-medium mb-4 border border-teal-100">
+              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-teal-100">
                 Simple Process
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">How It Works</h2>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">How It Works</h2>
               <p className="mt-4 text-xl text-slate-600">Three simple steps to data at scale</p>
             </div>
           </FadeInOnScroll>
@@ -472,23 +476,26 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Voice Demo Section */}
-      <section id="demo" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-        {/* Futuristic gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-teal-950/30 to-slate-900" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(20,184,166,0.15),transparent)]" />
+      {/* Voice Demo Section — next-level: noise, orbs, strong glow */}
+      <section id="demo" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 relative overflow-hidden noise-overlay">
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_60%_at_50%_-10%,rgba(20,184,166,0.25),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_50%,rgba(34,211,238,0.12),transparent)]" />
+        <div className="absolute top-1/3 left-1/4 w-64 h-64 rounded-full bg-teal-500/10 blur-[70px] animate-float pointer-events-none" />
+        <div className="absolute bottom-1/3 right-1/4 w-80 h-80 rounded-full bg-cyan-500/10 blur-[90px] animate-float pointer-events-none" style={{ animationDelay: "2s" }} />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.04)_1px,transparent_1px)] bg-[size:40px_40px]" />
         
         <div className="max-w-2xl mx-auto relative">
           <FadeInOnScroll>
             <div className="text-center mb-10">
-              <div className="inline-flex items-center gap-2 bg-teal-500/20 text-teal-200 px-4 py-2 rounded-full text-sm font-medium mb-4 border border-teal-400/30">
-                <Play className="w-4 h-4" />
+              <div className="inline-flex items-center gap-2 bg-teal-500/20 text-teal-200 px-4 py-2 rounded-full text-sm font-bold mb-4 border border-teal-400/50 shadow-lg shadow-teal-500/20">
+                <Play className="w-4 h-4 text-cyan-400" />
                 Live Demo
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-white mb-3">
+              <h2 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-3 text-glow-strong tracking-tight">
                 Talk to our AI
               </h2>
-              <p className="text-slate-200 text-lg max-w-xl mx-auto">
+              <p className="text-slate-300 text-lg max-w-xl mx-auto leading-relaxed">
                 Ask about pricing, use cases, or how it works — then book a call or enter your email below
               </p>
             </div>
@@ -505,10 +512,10 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <FadeInOnScroll>
             <div className="text-center mb-16">
-              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-medium mb-4 border border-teal-100">
+              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-teal-100">
                 Use Cases
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
                 Built for Data-Driven Teams
               </h2>
               <p className="mt-4 text-xl text-slate-600">
@@ -545,7 +552,7 @@ export default function LandingPage() {
               },
             ].map((useCase, i) => (
               <FadeInOnScroll key={i} delay={i * 100}>
-                <div className="group bg-white rounded-2xl p-8 border border-slate-200 hover:border-teal-300 hover:shadow-xl hover:shadow-teal-500/10 transition-all duration-300">
+                <div className="group bg-white rounded-2xl p-8 border border-slate-200 hover:border-teal-400/50 hover:shadow-xl hover:shadow-teal-500/20 transition-all duration-300">
                   <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center mb-6 shadow-lg shadow-teal-500/20 group-hover:scale-110 transition-transform">
                     <useCase.icon className="w-7 h-7 text-white" />
                   </div>
@@ -571,10 +578,10 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <FadeInOnScroll>
             <div className="text-center mb-16">
-              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-medium mb-4 border border-teal-100">
+              <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-teal-100">
                 Features
               </div>
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">Why Choose Intellidial</h2>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">Why Choose Intellidial</h2>
               <p className="mt-4 text-xl text-slate-600">
                 Built for accuracy, speed, and compliance
               </p>
@@ -785,20 +792,18 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* CTA Section */}
+      {/* CTA Section — futuristic glow */}
       <section id="contact" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <FadeInOnScroll>
             <div className="relative">
-              {/* Background glow */}
-              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/20 via-emerald-400/20 to-cyan-400/20 rounded-3xl blur-3xl"></div>
-              
-              <div className="relative bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 md:p-12 text-center overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-teal-400/25 rounded-3xl blur-3xl" />
+              <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-8 md:p-12 text-center overflow-hidden border border-teal-500/20 shadow-2xl shadow-teal-500/10">
                 {/* Pattern overlay */}
                 <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}></div>
                 
                 <div className="relative">
-                  <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
+                  <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 text-glow">
                     Ready to Scale Your Outreach?
                   </h2>
                   <p className="text-xl text-slate-300 mb-8">

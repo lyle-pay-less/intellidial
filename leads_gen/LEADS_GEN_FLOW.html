@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leads Gen Flow — Diagrams</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 24px; background: #1a1a1a; color: #e0e0e0; }
+    h1 { margin-top: 0; }
+    h2 { margin-top: 2em; border-bottom: 1px solid #444; padding-bottom: 0.25em; }
+    .mermaid { background: #252525; border-radius: 8px; padding: 24px; margin: 16px 0; }
+    .mermaid svg { max-width: 100%; }
+    p { color: #999; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Leads Gen Flow — Fully Automated</h1>
+  <p>Open this file in a browser to see the diagrams. In Cursor: right-click this file → Reveal in File Explorer → double-click to open in browser.</p>
+
+  <h2>1. High-level flow</h2>
+  <div class="mermaid">
+flowchart LR
+    A[1. Company discovery] --> B[2. Contact enrichment]
+    B --> C[3. Email verify]
+    C --> D[4. AI email gen]
+    D --> E[5. Send + protect domain]
+    E --> F[6. Track + follow-up]
+  </div>
+
+  <h2>2. Full process (tools at each step)</h2>
+  <div class="mermaid">
+flowchart TB
+    subgraph INPUT[" "]
+        ICP["ICP: segments, titles, filters"]
+    end
+
+    subgraph STEP1["1. COMPANY DISCOVERY"]
+        S1A[Apollo API Company Search]
+        S1B[LinkedIn / PhantomBuster]
+        S1C[Scraper: Clutch, G2, Google]
+        S1OUT["companies.csv"]
+        S1A --> S1OUT
+        S1B --> S1OUT
+        S1C --> S1OUT
+    end
+
+    subgraph STEP2["2. CONTACT ENRICHMENT"]
+        S2A[Hunter API domain-search]
+        S2B[Apollo API people]
+        S2C[Clearbit API]
+        S2OUT["contacts_raw.csv"]
+        S2A --> S2OUT
+        S2B --> S2OUT
+        S2C --> S2OUT
+    end
+
+    subgraph STEP3["3. EMAIL VERIFICATION"]
+        S3A[Hunter email-verifier]
+        S3B[NeverBounce / ZeroBounce]
+        S3OUT["contacts_verified.csv"]
+        S3A --> S3OUT
+        S3B --> S3OUT
+    end
+
+    subgraph STEP4["4. AI EMAIL GENERATION"]
+        S4A[LLM: GPT-4 / Claude / Gemini]
+        S4B[Template + LLM A/B]
+        S4OUT["emails_ready.csv"]
+        S4A --> S4OUT
+        S4B --> S4OUT
+    end
+
+    subgraph STEP5["5. SEND + PROTECT DOMAIN"]
+        S5A[SendGrid / Postmark / SES]
+        S5B[Instantly / Lemwarm warm-up]
+        S5C[Unsubscribe + suppression]
+        S5OUT["sent_log.csv"]
+        S5A --> S5OUT
+        S5B --> S5OUT
+        S5C --> S5OUT
+    end
+
+    subgraph STEP6["6. TRACK + FOLLOW-UP"]
+        S6A[Webhooks: opens, clicks]
+        S6B[Reply detection]
+        S6C[Scheduler + LLM follow-up]
+        S6OUT["replies.csv"]
+        S6A --> S6OUT
+        S6B --> S6OUT
+        S6C --> S6OUT
+    end
+
+    ICP --> STEP1
+    S1OUT --> STEP2
+    S2OUT --> STEP3
+    S3OUT --> STEP4
+    S4OUT --> STEP5
+    S5OUT --> STEP6
+  </div>
+
+  <h2>3. Data flow (CSV to CSV)</h2>
+  <div class="mermaid">
+flowchart LR
+    C1[companies.csv] --> C2[contacts_raw.csv]
+    C2 --> C3[contacts_verified.csv]
+    C3 --> C4[emails_ready.csv]
+    C4 --> C5[sent_log.csv]
+    C5 --> C6[replies + follow_ups]
+  </div>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+  </script>
+</body>
+</html>

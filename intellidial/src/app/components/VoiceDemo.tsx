@@ -160,44 +160,53 @@ export function VoiceDemo() {
   const waveScale = 0.7 + vol * 0.6;
 
   return (
-    <div className="relative rounded-2xl overflow-hidden bg-slate-800/40 border border-white/10 backdrop-blur-md shadow-2xl shadow-teal-500/5">
-      {/* Subtle grid overlay */}
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.03)_1px,transparent_1px)] bg-[size:24px_24px]" />
+    <div className="relative p-[2px] rounded-2xl overflow-hidden">
+      {/* Rotating gradient border — next-level */}
+      <div className="absolute inset-0 rounded-2xl bg-[conic-gradient(from_0deg,rgba(20,184,166,0.8),rgba(34,211,238,0.8),rgba(94,234,212,0.8),rgba(20,184,166,0.8))] opacity-90 animate-spin-slow" />
+      <div className="absolute inset-[2px] rounded-2xl bg-slate-900/95 z-[1]" />
 
-      {/* Volume-reactive wave */}
-      <div className="absolute inset-0 flex items-center justify-center gap-0.5 px-4 py-6 overflow-hidden">
-        {BASE_HEIGHTS.map((base, i) => {
-          const variation = 0.85 + 0.3 * Math.sin((i * 0.4) + vol * Math.PI * 2);
-          const h = Math.max(8, base * waveScale * variation);
-          const opacity = 0.4 + vol * 0.5 + (i % 3) * 0.05;
-          return (
-            <div
-              key={i}
-              className="w-1.5 rounded-full min-h-[6px] transition-all duration-75 ease-out bg-teal-400"
-              style={{
-                height: `${h}%`,
-                opacity: Math.min(1, opacity),
-                boxShadow: vol > 0.3 ? "0 0 8px rgba(20,184,166,0.4)" : undefined,
-              }}
-            />
-          );
-        })}
-      </div>
+      <div className="relative z-10 rounded-2xl overflow-hidden glass-panel border border-white/5 shadow-2xl animate-pulse-glow noise-overlay">
+        {/* Grid overlay */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.05)_1px,transparent_1px)] bg-[size:24px_24px]" />
+        {/* Scan-line */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,rgba(255,255,255,0.04)_2px,rgba(255,255,255,0.04)_4px)]" />
 
-      <div className="relative z-10 p-8 flex flex-col items-center gap-5">
-        {!callActive && !connecting && (
-          <button
-            type="button"
-            onClick={startDemo}
-            className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 text-slate-900 px-10 py-4 rounded-xl font-semibold text-lg transition-all shadow-lg shadow-teal-500/25 hover:shadow-teal-500/40"
-          >
-            <Mic className="w-5 h-5" />
-            Talk to our AI
-          </button>
-        )}
+        {/* Volume-reactive wave — neon bars */}
+        <div className="absolute inset-0 flex items-center justify-center gap-0.5 px-4 py-6 overflow-hidden">
+          {BASE_HEIGHTS.map((base, i) => {
+            const variation = 0.85 + 0.3 * Math.sin((i * 0.4) + vol * Math.PI * 2);
+            const h = Math.max(8, base * waveScale * variation);
+            const opacity = 0.6 + vol * 0.4 + (i % 3) * 0.05;
+            return (
+              <div
+                key={i}
+                className="w-1.5 rounded-full min-h-[6px] transition-all duration-75 ease-out bg-gradient-to-t from-teal-500 to-cyan-400"
+                style={{
+                  height: `${h}%`,
+                  opacity: Math.min(1, opacity),
+                  boxShadow: vol > 0.15
+                    ? "0 0 16px rgba(94,234,212,0.6), 0 0 6px rgba(34,211,238,0.5)"
+                    : "0 0 8px rgba(20,184,166,0.3)",
+                }}
+              />
+            );
+          })}
+        </div>
+
+        <div className="relative z-10 p-8 flex flex-col items-center gap-5">
+          {!callActive && !connecting && (
+            <button
+              type="button"
+              onClick={startDemo}
+              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.03] active:scale-[0.98] border border-white/20"
+            >
+              <Mic className="w-5 h-5" />
+              Talk to our AI
+            </button>
+          )}
         {connecting && (
-          <div className="flex items-center justify-center gap-3 min-h-[2.5rem] px-4 py-2 rounded-xl bg-slate-900/60 border border-white/10">
-            <Loader2 className="w-5 h-5 animate-spin shrink-0 text-teal-400" />
+          <div className="flex items-center justify-center gap-3 min-h-[2.5rem] px-5 py-3 rounded-xl bg-slate-900/70 border border-teal-500/20 shadow-lg shadow-teal-500/10">
+            <Loader2 className="w-5 h-5 animate-spin shrink-0 text-cyan-400" />
             <span className="text-slate-100 font-semibold text-base text-center">
               {CONNECTING_MESSAGES[connectingMessageIndex]}
             </span>
@@ -242,7 +251,7 @@ export function VoiceDemo() {
             )}
 
             {/* Email + Book a call / Enterprise chat — conversion CTA */}
-            <div className="w-full mt-2 p-4 rounded-xl bg-slate-900/50 border border-teal-500/20">
+            <div className="w-full mt-2 p-4 rounded-xl bg-slate-900/60 border border-teal-500/25 backdrop-blur-sm">
               <p className="text-slate-300 text-xs font-medium mb-3 uppercase tracking-wider">Book a call or start enterprise chat</p>
               <div className="flex flex-col sm:flex-row gap-2">
                 <div className="flex-1 relative">
@@ -280,6 +289,7 @@ export function VoiceDemo() {
           </div>
         )}
         {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+        </div>
       </div>
     </div>
   );

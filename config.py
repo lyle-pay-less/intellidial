@@ -16,6 +16,9 @@ GOOGLE_SHEETS_ID = os.getenv("GOOGLE_SHEETS_ID")
 # Gemini (for transcript analysis)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+# Hunter.io (leads_gen: find emails)
+HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
+
 # Search configuration
 SEARCH_LOCATION = {
     "lat": -33.8025,  # Parklands, Cape Town
