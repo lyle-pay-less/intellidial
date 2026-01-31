@@ -379,11 +379,28 @@ def load_gynecologists(filename: str = "gynecologists.json") -> list:
         return []
 
 
-def save_results(results: list, filename: str = "call_results.json"):
-    """Save call results to JSON"""
+CALL_RESULTS_FILE = "call_results.json"
+
+
+def load_existing_results(filename: str = CALL_RESULTS_FILE) -> list:
+    """Load existing call results so we accumulate across runs."""
+    if not os.path.exists(filename):
+        return []
+    try:
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def save_results(results: list, filename: str = CALL_RESULTS_FILE):
+    """Save call results to JSON (appends to existing so we keep all runs)."""
+    existing = load_existing_results(filename)
+    combined = existing + results
     with open(filename, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, ensure_ascii=False)
-    print(f"\nSaved {len(results)} results to {filename}")
+        json.dump(combined, f, indent=2, ensure_ascii=False)
+    print(f"\nSaved {len(results)} new results → {filename} now has {len(combined)} total")
 
 
 def main():

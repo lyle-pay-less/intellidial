@@ -10,7 +10,9 @@ AI-powered phone research: scrape contact lists, call businesses with voice AI, 
 |------|-------------|
 | **`1_scrape_numbers.py`** | Scrape business phone numbers via Google Places API (e.g. gynecologists in a region). |
 | **`2_vapi_caller.py`** | Create a VAPI assistant, place outbound calls (Twilio), download recordings, analyse transcripts with Gemini, write results to Excel. |
+| **`analyze_recordings_to_excel.py`** | Rebuild or create the same Excel from `call_results.json` or from a `recordings/` folder + manifest; uses Gemini to extract Gyni/Ultrasound/Price/Availability. |
 | **`create_demo_agent.py`** | Create/update the VAPI “website demo” assistant used by the landing page voice widget. |
+| **`leads_gen/`** | Lead generation pipeline: company list → Hunter enrichment + verification (`find_emails.py`) → Gemini email generation (`generate_emails.py`) → import into Instantly. See `leads_gen/README.md`. |
 | **`intellidial/`** | Next.js landing page for Intellidial: hero, features, voice demo (VAPI Web SDK), pricing, use cases, email/book-a-call CTA. |
 | **`production_plan/`** | Business and MVP docs: `BUSINESS_IDEAS.md`, `MVP_PLAN.md`, `GO_LIVE_PLAN.md`, `LANDING_PAGE_DESIGN.md`. |
 | **`config.py`** | Loads env vars for the Python scripts (uses `python-dotenv` from `.env`). |
@@ -83,6 +85,13 @@ pip install -r requirements.txt
    ```
    Uses `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, Twilio env vars, and `GEMINI_API_KEY`. Tracks called numbers (e.g. in `called_numbers.json`), writes results to an Excel file and saves recordings under `recordings/` (if configured).
 
+   **Or rebuild Excel from existing data:** use `call_results.json` or a `recordings/` folder + manifest:
+   ```bash
+   python analyze_recordings_to_excel.py
+   python analyze_recordings_to_excel.py --reanalyze
+   python analyze_recordings_to_excel.py --from-recordings
+   ```
+
 3. **Create or update the website demo assistant** (so the landing page voice demo works):
    ```bash
    python create_demo_agent.py
@@ -112,7 +121,9 @@ doctor/
 ├── requirements.txt        # Python deps
 ├── 1_scrape_numbers.py     # Google Places scraping
 ├── 2_vapi_caller.py        # VAPI outbound calls, recordings, Gemini, Excel
+├── analyze_recordings_to_excel.py  # Rebuild Excel from call_results or recordings/
 ├── create_demo_agent.py    # VAPI demo assistant for website
+├── leads_gen/              # Lead gen: find_emails.py → generate_emails.py → Instantly
 ├── intellidial/            # Next.js landing page + voice demo
 │   ├── src/app/
 │   │   ├── api/demo-assistant/   # Returns assistant ID + public key for front end

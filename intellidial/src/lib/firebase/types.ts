@@ -1,0 +1,81 @@
+/**
+ * Firestore data model for back office (GCP / Firebase).
+ * Collections: users, projects, contacts.
+ */
+
+export type ProjectStatus = "draft" | "running" | "completed" | "paused";
+export type ContactStatus = "pending" | "calling" | "success" | "failed";
+
+export type CaptureField = {
+  key: string;
+  label: string;
+  type?: "text" | "number";
+};
+
+export type CallResult = {
+  durationSeconds?: number;
+  recordingUrl?: string;
+  transcript?: string;
+  capturedData?: Record<string, string | number | null>;
+  attemptedAt?: string; // ISO date
+  failureReason?: string;
+};
+
+/** Firestore: users (collection). Doc id = auth uid. */
+export type UserDoc = {
+  email: string;
+  name?: string | null;
+  createdAt: string; // ISO
+};
+
+/** Question the agent asks during a call */
+export type AgentQuestion = {
+  id: string;
+  text: string;
+  fieldKey?: string; // Excel column name, AI-generated
+};
+
+/** Firestore: projects (collection). */
+export type ProjectDoc = {
+  userId: string;
+  name: string;
+  description?: string | null;
+  status: ProjectStatus;
+  /** Industry for AI-generated defaults */
+  industry?: string | null;
+  /** How the agent should act — AI-generated */
+  tone?: string | null;
+  /** Goal of the agent — AI-generated */
+  goal?: string | null;
+  /** Questions the agent asks */
+  agentQuestions?: AgentQuestion[];
+  captureFields?: CaptureField[];
+  agentInstructions?: string | null;
+  notifyOnComplete?: boolean;
+  /** Enable post-call survey; recipient can give feedback */
+  surveyEnabled?: boolean;
+  /** Call window start (HH:mm), e.g. "09:00" */
+  callWindowStart?: string | null;
+  /** Call window end (HH:mm), e.g. "17:00" */
+  callWindowEnd?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Firestore: contacts (collection). Query by projectId. */
+export type ContactDoc = {
+  projectId: string;
+  phone: string;
+  name?: string | null;
+  status: ContactStatus;
+  callResult?: CallResult | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Collection names */
+export const COLLECTIONS = {
+  users: "users",
+  projects: "projects",
+  contacts: "contacts",
+} as const;

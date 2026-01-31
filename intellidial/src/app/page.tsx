@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { VoiceDemo } from "./components/VoiceDemo";
+import { LoginModal } from "./components/LoginModal";
 import {
   Phone,
   BarChart3,
@@ -103,13 +104,9 @@ function FadeInOnScroll({ children, className = "", delay = 0 }: { children: Rea
 
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [scrolled, setScrolled] = useState(false);
-
-  // Animated counters
-  const callsCounter = useCountUp(10847, 2500);
-  const accuracyCounter = useCountUp(96, 2000);
-  const businessesCounter = useCountUp(52, 2000);
 
   // Scroll effect for nav
   useEffect(() => {
@@ -176,6 +173,9 @@ export default function LandingPage() {
               <a href="#faq" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
                 FAQ
               </a>
+              <button type="button" onClick={() => setLoginModalOpen(true)} className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
+                Login
+              </button>
               <a
                 href="#contact"
                 className="bg-gradient-to-r from-teal-600 to-teal-700 text-white px-6 py-2.5 rounded-xl font-semibold hover:from-teal-700 hover:to-teal-800 transition-all shadow-lg shadow-teal-600/20 hover:shadow-xl hover:shadow-teal-600/30 hover:-translate-y-0.5"
@@ -209,6 +209,9 @@ export default function LandingPage() {
             <a href="#faq" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
               FAQ
             </a>
+            <button type="button" className="block text-slate-600 hover:text-teal-600 py-2 font-medium w-full text-left" onClick={() => { setMobileMenuOpen(false); setLoginModalOpen(true); }}>
+              Login
+            </button>
             <a
               href="#contact"
               className="block bg-gradient-to-r from-teal-600 to-teal-700 text-white px-5 py-3 rounded-xl font-semibold text-center mt-4"
@@ -220,18 +223,18 @@ export default function LandingPage() {
         )}
       </nav>
 
-      {/* Hero Section — next-level: orbs, gradient mesh, display font */}
-      <section className="relative pt-28 md:pt-36 pb-16 md:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+      {/* Hero Section — original: explains what we do; demo block in hero as main convincer */}
+      <section id="demo" className="relative pt-28 md:pt-36 pb-16 md:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_80%_at_50%_0%,rgba(20,184,166,0.1),transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_80%_20%,rgba(34,211,238,0.06),transparent)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_40%_at_20%_80%,rgba(94,234,212,0.05),transparent)]" />
-        {/* Floating orbs */}
         <div className="absolute top-1/4 left-1/4 w-72 h-72 rounded-full bg-teal-400/20 blur-[80px] animate-float pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full bg-cyan-400/15 blur-[100px] animate-float pointer-events-none" style={{ animationDelay: "1.5s" }} />
         <div className="absolute top-1/2 right-1/3 w-48 h-48 rounded-full bg-emerald-400/10 blur-[60px] animate-float pointer-events-none" style={{ animationDelay: "3s" }} />
+
         <div className="max-w-6xl mx-auto relative">
+          {/* Top part — what the company does (restored) */}
           <div className="text-center max-w-4xl mx-auto">
-            {/* Badge */}
             <FadeInOnScroll>
               <div className="inline-flex items-center gap-2 bg-teal-50/90 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-6 border border-teal-200/80 shadow-lg shadow-teal-500/5">
                 <Zap className="w-4 h-4 text-cyan-600" />
@@ -250,8 +253,8 @@ export default function LandingPage() {
 
             <FadeInOnScroll delay={200}>
               <p className="mt-6 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto">
-                We call hundreds of businesses, ask your questions, and deliver structured data.
-                Save weeks of manual phone work with AI-powered research.
+                We call your list, ask your questions, and return Excel + recordings in 2–5 days.
+                No manual dialling — just structured data.
               </p>
             </FadeInOnScroll>
 
@@ -273,67 +276,46 @@ export default function LandingPage() {
                 </a>
               </div>
             </FadeInOnScroll>
-
-            {/* Trust indicators */}
-            <FadeInOnScroll delay={400}>
-              <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                  No setup fees
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                  50 free calls to start
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-teal-600" />
-                  Cancel anytime
-                </div>
-              </div>
-            </FadeInOnScroll>
           </div>
 
-          {/* Hero Product Image — futuristic glow */}
-          <FadeInOnScroll delay={500}>
-            <div className="mt-16 relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-emerald-400/25 rounded-3xl blur-3xl" />
-              <div className="relative rounded-2xl ring-1 ring-slate-200/50 ring-inset overflow-hidden shadow-2xl shadow-slate-900/10">
-                <img 
-                  src="/dashboard.jpeg" 
-                  alt="Intellidial Dashboard - Business Call Analytics showing call progress, company data, and results" 
-                  className="w-full max-w-4xl mx-auto rounded-2xl"
-                />
+          {/* Demo part — main convincer: Talk to our AI (moved into hero) */}
+          <FadeInOnScroll delay={350}>
+            <div className="mt-14 md:mt-16 max-w-2xl mx-auto">
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center gap-2 border-2 border-teal-400/80 text-teal-700 px-4 py-2 rounded-full text-sm font-bold mb-3 bg-teal-50/90">
+                  <Play className="w-4 h-4 fill-teal-600 text-teal-600" />
+                  Live Demo
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-2">
+                  Talk to our AI
+                </h2>
+                <p className="text-slate-600 text-sm sm:text-base mt-1 max-w-lg mx-auto">
+                  Ask about pricing, use cases, or how it works — then book a call or enter your email below
+                </p>
               </div>
+              <VoiceDemo />
             </div>
           </FadeInOnScroll>
 
-          {/* Stats Row */}
-          <FadeInOnScroll delay={600}>
-            <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
-              <div ref={callsCounter.ref} className="text-center">
-                <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-3">
-                  <Phone className="w-6 h-6 text-teal-600" />
-                </div>
-                <div className="text-3xl md:text-4xl font-bold text-slate-900">{callsCounter.count.toLocaleString()}+</div>
-                <div className="text-sm text-slate-500 mt-1">Calls Made</div>
+          {/* Trust indicators */}
+          <FadeInOnScroll delay={400}>
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                No setup fees
               </div>
-              <div ref={accuracyCounter.ref} className="text-center">
-                <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-3">
-                  <BarChart3 className="w-6 h-6 text-teal-600" />
-                </div>
-                <div className="text-3xl md:text-4xl font-bold text-slate-900">{accuracyCounter.count}%</div>
-                <div className="text-sm text-slate-500 mt-1">Data Accuracy</div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                50 free calls to start
               </div>
-              <div ref={businessesCounter.ref} className="text-center">
-                <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-3">
-                  <Building2 className="w-6 h-6 text-teal-600" />
-                </div>
-                <div className="text-3xl md:text-4xl font-bold text-slate-900">{businessesCounter.count}+</div>
-                <div className="text-sm text-slate-500 mt-1">Businesses Served</div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                Cancel anytime
               </div>
             </div>
           </FadeInOnScroll>
         </div>
+
       </section>
 
       {/* Social Proof Bar */}
@@ -476,37 +458,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Voice Demo Section — next-level: noise, orbs, strong glow */}
-      <section id="demo" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 relative overflow-hidden noise-overlay">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_60%_at_50%_-10%,rgba(20,184,166,0.25),transparent_50%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_40%_at_50%_50%,rgba(34,211,238,0.12),transparent)]" />
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 rounded-full bg-teal-500/10 blur-[70px] animate-float pointer-events-none" />
-        <div className="absolute bottom-1/3 right-1/4 w-80 h-80 rounded-full bg-cyan-500/10 blur-[90px] animate-float pointer-events-none" style={{ animationDelay: "2s" }} />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(20,184,166,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(20,184,166,0.04)_1px,transparent_1px)] bg-[size:40px_40px]" />
-        
-        <div className="max-w-2xl mx-auto relative">
-          <FadeInOnScroll>
-            <div className="text-center mb-10">
-              <div className="inline-flex items-center gap-2 bg-teal-500/20 text-teal-200 px-4 py-2 rounded-full text-sm font-bold mb-4 border border-teal-400/50 shadow-lg shadow-teal-500/20">
-                <Play className="w-4 h-4 text-cyan-400" />
-                Live Demo
-              </div>
-              <h2 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-3 text-glow-strong tracking-tight">
-                Talk to our AI
-              </h2>
-              <p className="text-slate-300 text-lg max-w-xl mx-auto leading-relaxed">
-                Ask about pricing, use cases, or how it works — then book a call or enter your email below
-              </p>
-            </div>
-          </FadeInOnScroll>
-
-          <FadeInOnScroll delay={100}>
-            <VoiceDemo />
-          </FadeInOnScroll>
-        </div>
-      </section>
-
       {/* Use Cases */}
       <section id="use-cases" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-6xl mx-auto">
@@ -627,6 +578,9 @@ export default function LandingPage() {
               <p className="mt-4 text-xl text-slate-600">
                 Start small, scale as you grow
               </p>
+              <p className="mt-2 text-sm font-semibold text-teal-600">
+                Start with a free trial — no card required
+              </p>
             </div>
           </FadeInOnScroll>
 
@@ -634,24 +588,27 @@ export default function LandingPage() {
             {[
               {
                 name: "Starter",
-                price: "R1,500",
+                price: "R999",
                 popular: false,
+                trial: true,
                 features: ["100 calls per month", "1 project", "Excel export", "Call recordings", "Email support"],
-                cta: "Get Started",
+                cta: "Start free trial",
                 ctaStyle: "secondary",
               },
               {
                 name: "Growth",
-                price: "R3,500",
+                price: "R2,999",
                 popular: true,
+                trial: true,
                 features: ["300 calls per month", "3 projects", "List generation included", "Excel export", "Call recordings", "Priority support"],
-                cta: "Get Started",
+                cta: "Start free trial",
                 ctaStyle: "primary",
               },
               {
                 name: "Pro",
-                price: "R8,000",
+                price: "R8,999",
                 popular: false,
+                trial: true,
                 features: ["1,000 calls per month", "Unlimited projects", "List generation included", "Excel + API export", "Dedicated manager", "Custom AI voice"],
                 cta: "Contact Us",
                 ctaStyle: "secondary",
@@ -664,6 +621,16 @@ export default function LandingPage() {
                   {plan.popular && (
                     <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
                       Most Popular
+                    </div>
+                  )}
+                  {plan.trial && !plan.popular && (
+                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-slate-100 text-slate-700 px-4 py-1 rounded-full text-sm font-medium border border-slate-200">
+                      Free trial
+                    </div>
+                  )}
+                  {plan.trial && plan.popular && (
+                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 text-xs font-medium text-slate-500">
+                      Free trial included
                     </div>
                   )}
                   <div className="text-lg font-semibold text-slate-900 mb-2">{plan.name}</div>
@@ -695,12 +662,14 @@ export default function LandingPage() {
           </div>
 
           <FadeInOnScroll delay={300}>
-            <p className="text-center mt-10 text-slate-600">
-              Need more volume?{" "}
-              <a href="#contact" className="text-teal-600 font-semibold hover:underline">
-                Let's talk enterprise pricing →
-              </a>
-            </p>
+            <div className="text-center mt-10">
+              <p className="text-slate-600">
+                Need more volume?{" "}
+                <a href="#contact" className="text-teal-600 font-semibold hover:underline">
+                  Enterprise — contact for price →
+                </a>
+              </p>
+            </div>
           </FadeInOnScroll>
         </div>
       </section>
@@ -813,14 +782,14 @@ export default function LandingPage() {
                   <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                     <a
                       href="https://wa.me/27XXXXXXXXX?text=Hi%2C%20I'm%20interested%20in%20Intellidial"
-                      target="_blank"
-                      rel="noopener noreferrer"
+            target="_blank"
+            rel="noopener noreferrer"
                       className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-teal-600 hover:to-teal-700 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1"
                     >
                       <MessageCircle className="w-5 h-5" />
                       Chat on WhatsApp
-                    </a>
-                    <a
+          </a>
+          <a
                       href="mailto:hello@intellidial.co.za"
                       className="inline-flex items-center justify-center gap-2 bg-white/10 backdrop-blur text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/20 transition-all border border-white/20"
                     >
@@ -938,6 +907,9 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* Login modal — pops over hero with blurred background */}
+      <LoginModal isOpen={loginModalOpen} onClose={() => setLoginModalOpen(false)} />
     </div>
   );
 }
