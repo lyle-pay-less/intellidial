@@ -27,6 +27,8 @@ import {
   Lock,
   Headphones,
   CheckCircle2,
+  Wallet,
+  CalendarCheck,
 } from "lucide-react";
 
 // Animated counter hook
@@ -470,7 +472,7 @@ export default function LandingPage() {
                 Built for Data-Driven Teams
               </h2>
               <p className="mt-4 text-xl text-slate-600">
-                From healthcare to property, we help teams gather data faster
+                From healthcare to debt collection, we help teams gather data faster
               </p>
             </div>
           </FadeInOnScroll>
@@ -500,6 +502,18 @@ export default function LandingPage() {
                 title: "Market Research",
                 desc: "Conduct price surveys, gather competitive intelligence, verify business information, and build comprehensive market data.",
                 items: ["Price surveys", "Competitor analysis", "Business data verification"],
+              },
+              {
+                icon: Wallet,
+                title: "Debt Collection & Arrears",
+                desc: "Confirm balances, agree payment plans, capture commitment dates and callback preferences — compliant and at scale.",
+                items: ["Balance confirmation", "Payment plan setup", "Callback scheduling"],
+              },
+              {
+                icon: CalendarCheck,
+                title: "Appointment Reminders & Confirmations",
+                desc: "Reduce no-shows by confirming appointments, rescheduling, and capturing attendance intent across clinics, salons, and services.",
+                items: ["Appointment confirmation", "Reschedule offers", "No-show reduction"],
               },
             ].map((useCase, i) => (
               <FadeInOnScroll key={i} delay={i * 100}>
