@@ -4,7 +4,25 @@ This folder contains tasks and features that are planned but not yet implemented
 
 ## Current Backlog Items
 
-- [Email Sending](./EMAIL_SENDING.md) - Implement real email sending for team invitations and other notifications
+| Item | Priority | Status | Description |
+|------|----------|--------|-------------|
+| [Email Sending](./EMAIL_SENDING.md) | High | ❌ Not started | Real email for team invitations |
+| [Gemini Integration](./GEMINI_INTEGRATION.md) | High | ❌ Not started | Replace mock with Gemini API for Instructions tab auto-fill |
+| [VAPI Assistant Creation](./VAPI_ASSISTANT_CREATION.md) | High | ❌ Not started | Create VAPI assistant per project when ready for calls |
+| [VAPI Calls & Webhooks](./VAPI_CALLS_WEBHOOKS.md) | High | ❌ Not started | Real outbound calls and call-ended webhook |
+| [Phone Numbers](./PHONE_NUMBERS.md) | High | ❌ Not started | Per-org caller ID (provision or BYON) |
+| [Contacts Firestore Persistence](./CONTACTS_FIRESTORE_PERSISTENCE.md) | High | ❌ Not started | Persist contacts to Firestore (currently in-memory only) |
+| [Settings Org Scoping](./SETTINGS_ORG_SCOPING.md) | Medium | ❌ Not started | Scope subscription, payments, invoices by org |
+
+## Implementation Order (Recommended)
+
+1. **Contacts Firestore Persistence** — Prevent data loss on restart
+2. **Gemini Integration** — Instructions tab auto-fill (no external call dependency)
+3. **VAPI Assistant Creation** — Create agents from project config
+4. **Phone Numbers** — Per-org caller ID (required before real calls)
+5. **VAPI Calls & Webhooks** — Real calls and call result handling
+6. **Email Sending** — Team invitations (standalone)
+7. **Settings Org Scoping** — When wiring real Stripe/billing
 
 ---
 
