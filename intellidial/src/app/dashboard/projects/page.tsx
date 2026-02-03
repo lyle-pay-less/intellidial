@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { FolderOpen, Plus, Loader2 } from "lucide-react";
 import Link from "next/link";
 
@@ -16,6 +17,7 @@ type Project = {
 
 export default function ProjectsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -25,14 +27,19 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchProjects = async () => {
-    const res = await fetch("/api/projects");
+    if (!user?.uid) return;
+    const res = await fetch("/api/projects", { headers: { "x-user-id": user.uid } });
     const data = await res.json();
     setProjects(Array.isArray(data) ? data : []);
   };
 
   useEffect(() => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
     fetchProjects().finally(() => setLoading(false));
-  }, []);
+  }, [user?.uid]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +49,10 @@ export default function ProjectsPage() {
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(user?.uid ? { "x-user-id": user.uid } : {}),
+        },
         body: JSON.stringify({ name: name.trim(), description: description.trim() || undefined }),
       });
       const data = await res.json();

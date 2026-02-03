@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import type { AgentQuestion, CaptureField } from "@/lib/firebase/types";
 
 /** Mock AI generation — replace with Gemini API when ready */
@@ -117,15 +117,26 @@ function getIndustryConfig(industry: string) {
   return MOCK_BY_INDUSTRY[key] ?? MOCK_BY_INDUSTRY.other;
 }
 
+import { getProject } from "@/lib/data/store";
+import { getOrgFromRequest } from "../../getOrgFromRequest";
+
 export async function POST(
-  request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ error: "Missing project id" }, { status: 400 });
   }
-  const body = await request.json();
+  const project = await getProject(id, org.orgId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const body = await req.json();
   const { type, industry, questions } = body ?? {};
   const config = getIndustryConfig(industry ?? "");
 

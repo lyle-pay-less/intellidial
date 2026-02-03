@@ -16,9 +16,7 @@ if (fs.existsSync(envPath)) {
 const nextConfig: NextConfig = {
   reactCompiler: true,
   // Keep module resolution in this package (fixes "resolve tailwindcss in C:\code\doctor")
-  experimental: {
-    serverComponentsExternalPackages: [],
-  },
+  serverExternalPackages: [],
   webpack: (config, { isServer }) => {
     config.resolve.modules = [path.join(__dirname, "node_modules"), "node_modules"];
     return config;

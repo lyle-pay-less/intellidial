@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 import {
   LayoutDashboard,
   Users,
@@ -62,22 +63,28 @@ const CHART_COLORS = {
 };
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"all" | "wow" | "mom">("all");
 
   useEffect(() => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+    const headers = { "x-user-id": user.uid };
     Promise.all([
-      fetch(`/api/dashboard/stats?period=${period}`).then((r) => r.json()),
-      fetch("/api/projects").then((r) => r.json()),
+      fetch(`/api/dashboard/stats?period=${period}`, { headers }).then((r) => r.json()),
+      fetch("/api/projects", { headers }).then((r) => r.json()),
     ])
       .then(([statsData, projectsData]) => {
         setStats(statsData);
         setProjects(Array.isArray(projectsData) ? projectsData.slice(0, 5) : []);
       })
       .finally(() => setLoading(false));
-  }, [period]);
+  }, [period, user?.uid]);
 
   return (
     <div className="p-6 md:p-8">
@@ -245,17 +252,14 @@ export default function DashboardPage() {
             </div>
 
             {/* Minutes by day */}
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-x-auto">
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="mb-4 font-display text-sm font-semibold text-slate-900">
                 Minutes by day
               </h3>
-              <div className="h-64 min-w-[400px]" style={{ minWidth: Math.max(400, (stats.minutesByDay?.length ?? 0) * 36) }}>
+              <div className="h-64">
                 {stats.minutesByDay?.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={stats.minutesByDay}
-                      margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                    >
+                    <BarChart data={stats.minutesByDay}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100" />
                       <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} />
                       <YAxis tick={{ fontSize: 12 }} tickLine={false} />
@@ -279,17 +283,14 @@ export default function DashboardPage() {
           </div>
 
           {/* Calls by day - stacked bar */}
-          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-x-auto">
+          <div className="mb-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="mb-4 font-display text-sm font-semibold text-slate-900">
               Calls by day
             </h3>
-            <div className="h-64 min-w-[400px]" style={{ minWidth: Math.max(400, (stats.callsByDay?.length ?? 0) * 36) }}>
+            <div className="h-64">
               {stats.callsByDay?.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={stats.callsByDay}
-                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                  >
+                  <BarChart data={stats.callsByDay}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100" />
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} />
                     <YAxis tick={{ fontSize: 12 }} tickLine={false} />

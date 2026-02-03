@@ -10,6 +10,7 @@ import {
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   GoogleAuthProvider,
   OAuthProvider,
@@ -27,6 +28,7 @@ type AuthContextValue = AuthState & {
   signInWithMicrosoft: () => Promise<void>;
   signInWithGitHub: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<User>;
   signOut: () => Promise<void>;
 };
 
@@ -91,6 +93,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signInWithEmailAndPassword(auth, email, password);
   };
 
+  const signUpWithEmail = async (email: string, password: string) => {
+    const auth = getFirebaseAuth();
+    if (!auth) throw new Error("Firebase Auth not configured");
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    return result.user;
+  };
+
   const signOut = async () => {
     const auth = getFirebaseAuth();
     if (auth) await firebaseSignOut(auth);
@@ -103,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithMicrosoft,
     signInWithGitHub,
     signInWithEmail,
+    signUpWithEmail,
     signOut,
   };
 

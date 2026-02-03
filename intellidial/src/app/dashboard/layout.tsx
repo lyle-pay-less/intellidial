@@ -1,29 +1,69 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Phone, LayoutDashboard, FolderOpen, Users, Settings } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Users, Settings, Building2 } from "lucide-react";
 import { DashboardGuard } from "./DashboardGuard";
 import { UserMenu } from "./UserMenu";
 import { UsageWidget } from "./UsageWidget";
 import { NotificationBell } from "./NotificationBell";
+import { useAuth } from "@/lib/auth/AuthContext";
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const [orgName, setOrgName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      console.log("[Dashboard Layout] No user UID, skipping org fetch");
+      return;
+    }
+
+    console.log("[Dashboard Layout] Fetching organization for userId:", user.uid);
+
+    fetch("/api/auth/organization", {
+      headers: {
+        "x-user-id": user.uid,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        console.log("[Dashboard Layout] Organization API response:", data);
+        if (data.hasOrganization && data.organization) {
+          console.log("[Dashboard Layout] Setting org name:", data.organization.name);
+          setOrgName(data.organization.name);
+        } else {
+          console.warn("[Dashboard Layout] No organization found for user");
+        }
+      })
+      .catch((err) => {
+        console.error("[Dashboard Layout] Failed to fetch organization", err);
+      });
+  }, [user]);
+
   return (
-    <DashboardGuard>
     <div className="min-h-screen bg-slate-50">
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 z-40 flex h-screen w-56 flex-col border-r border-slate-200 bg-white">
-        <div className="flex h-16 items-center gap-2 border-b border-slate-100 px-4">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500 to-teal-700 shadow-lg shadow-teal-500/20">
-              <Phone className="h-4 w-4 text-white" />
-            </div>
+        <div className="border-b border-slate-100 px-4 py-3">
+          <Link href="/" className="flex items-center gap-2 mb-2">
+            <img 
+              src="/intellidial-logo.png" 
+              alt="Intellidial" 
+              className="h-9 w-9 object-contain"
+            />
             <span className="font-display text-lg font-bold text-slate-900">
-              Intellidial
+              Intelli<span className="text-teal-600">dial</span>
             </span>
           </Link>
+          {orgName && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200">
+              <Building2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+              <span className="text-xs font-medium text-slate-700 truncate" title={orgName}>
+                {orgName}
+              </span>
+            </div>
+          )}
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 p-3">
           <Link
@@ -65,6 +105,17 @@ export default function DashboardLayout({
       {/* Main content */}
       <main className="pl-56">{children}</main>
     </div>
+  );
+}
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <DashboardGuard>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
     </DashboardGuard>
   );
 }

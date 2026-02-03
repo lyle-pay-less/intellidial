@@ -1,15 +1,50 @@
 /**
  * In-memory store for projects and contacts.
  * Used when Firebase is not configured. Resets on server restart.
+ * 
+ * Organizations are now persisted to Firestore when Firebase Admin SDK is configured.
+ * Falls back to in-memory storage if Firebase is not available.
  */
 
-import type { ProjectDoc, ContactDoc } from "@/lib/firebase/types";
+import type { ProjectDoc, ContactDoc, OrganizationDoc } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
+import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured } from "@/lib/firebase/admin";
+import { COLLECTIONS } from "@/lib/firebase/types";
 
 const now = () => new Date().toISOString();
 
 type ProjectWithId = ProjectDoc & { id: string };
 type ContactWithId = ContactDoc & { id: string };
+
+/** Organizations: orgId -> { id, name, ownerId, createdAt } */
+type Organization = {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+};
+/** Team members: userId -> { id, email, name, role, orgId, status, invitedAt, lastActive } */
+type TeamMember = {
+  id: string;
+  email: string;
+  name?: string;
+  role: "owner" | "admin" | "operator" | "viewer";
+  orgId: string;
+  status: "active" | "invited";
+  invitedAt?: string;
+  lastActive?: string;
+};
+/** Invitations: token -> { token, email, role, orgId, invitedBy, createdAt, expiresAt, accepted } */
+type Invitation = {
+  token: string;
+  email: string;
+  role: "admin" | "operator" | "viewer";
+  orgId: string;
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
+  accepted: boolean;
+};
 
 const projects = new Map<string, ProjectWithId>();
 const contacts = new Map<string, ContactWithId>();
@@ -17,7 +52,29 @@ const projectContacts = new Map<string, string[]>();
 /** Project call queue: contact IDs to call next (in order) */
 const projectQueue = new Map<string, Set<string>>();
 
+/** Organizations: orgId -> Organization */
+const organizations = new Map<string, Organization>();
+/** User to organization mapping: userId -> orgId */
+const userOrganizations = new Map<string, string>();
+/** Team members: userId -> TeamMember */
+const teamMembers = new Map<string, TeamMember>();
+/** Email to userId mapping (for quick lookup) */
+const emailToUserId = new Map<string, string>();
+/** Invitations: token -> Invitation */
+const invitations = new Map<string, Invitation>();
+/** Email to invitation token mapping (for quick lookup) */
+const emailToInvitationToken = new Map<string, string>();
+
 let contactIdCounter = 0;
+let orgIdCounter = 0;
+let userIdCounter = 0;
+
+/** Demo org ID – demo data for dev-user-1 */
+const DEMO_ORG_ID = "dev-org-1";
+/** Orgs that receive demo data at init */
+const DEMO_ORG_IDS = [DEMO_ORG_ID];
+/** Org names that get demo data seeded at runtime (test/demo orgs) */
+const DEMO_ORG_NAMES = ["pay-less", "payless"];
 
 function nextContactId() {
   return `contact-${++contactIdCounter}`;
@@ -25,9 +82,40 @@ function nextContactId() {
 
 function initStore() {
   if (projects.size > 0) return;
+  // Set up demo org so dev-user-1 sees demo data
+  organizations.set(DEMO_ORG_ID, {
+    id: DEMO_ORG_ID,
+    name: "Demo Organization",
+    ownerId: "dev-user-1",
+    createdAt: now(),
+  });
+  userOrganizations.set("dev-user-1", DEMO_ORG_ID);
+  DEMO_ORG_IDS.forEach((orgId) => {
+    MOCK_PROJECTS.forEach((p, i) => {
+      const id = `proj-${orgId}-${String(i + 1)}`;
+      projects.set(id, { ...p, id, orgId } as ProjectWithId);
+      const mockContacts = getMockContacts(id);
+      const ids: string[] = [];
+      mockContacts.forEach((c) => {
+        const cid = nextContactId();
+        contacts.set(cid, { ...c, projectId: id, id: cid } as ContactWithId);
+        ids.push(cid);
+      });
+      projectContacts.set(id, ids);
+    });
+  });
+  injectDemoChartData();
+  console.log("[Store] Demo data initialized for dev-org-1");
+}
+
+/**
+ * Seed demo data for an org (e.g. Pay-less). Call when org has no projects and name matches DEMO_ORG_NAMES.
+ */
+function seedDemoDataForOrg(orgId: string): void {
+  if (getProjectIdsForOrg(orgId).length > 0) return; // Already has data
   MOCK_PROJECTS.forEach((p, i) => {
-    const id = `proj-${String(i + 1)}`;
-    projects.set(id, { ...p, id } as ProjectWithId);
+    const id = `proj-${orgId}-${String(i + 1)}`;
+    projects.set(id, { ...p, id, orgId } as ProjectWithId);
     const mockContacts = getMockContacts(id);
     const ids: string[] = [];
     mockContacts.forEach((c) => {
@@ -37,12 +125,68 @@ function initStore() {
     });
     projectContacts.set(id, ids);
   });
-  injectDemoChartData();
+  // Inject chart data for first project
+  const firstProjectId = `proj-${orgId}-1`;
+  const existingIds = projectContacts.get(firstProjectId) ?? [];
+  const names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack", "Kate", "Leo"];
+  const failureReasons = ["No answer", "Busy", "Wrong number", "Callback requested"];
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  for (let day = 1; day <= 31; day++) {
+    const d = new Date(year, month, day);
+    if (d.getDay() < 1 || d.getDay() > 5) continue;
+    const attemptedAt = d.toISOString().slice(0, 10) + "T09:00:00.000Z";
+    const callsToday = demoRand(day * 7 + orgId.length, 4, 12);
+    for (let i = 0; i < callsToday; i++) {
+      const seed = day * 100 + i;
+      const isSuccess = demoRand(seed, 0, 100) > 22;
+      const durationSeconds = isSuccess ? demoRand(seed + 1, 90, 320) : 0;
+      const cid = nextContactId();
+      const contact: ContactWithId = {
+        id: cid,
+        projectId: firstProjectId,
+        phone: `+27${String(seed + 800000000).padStart(9, "0").slice(-9)}`,
+        name: names[demoRand(seed + 2, 0, names.length - 1)],
+        status: isSuccess ? "success" : "failed",
+        callResult: {
+          durationSeconds: isSuccess ? durationSeconds : undefined,
+          attemptedAt,
+          ...(isSuccess
+            ? { capturedData: { interested: demoRand(seed + 3, 0, 1) ? "Yes" : "No" } }
+            : { failureReason: failureReasons[demoRand(seed + 3, 0, failureReasons.length - 1)] }),
+        },
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+      contacts.set(cid, contact);
+      existingIds.push(cid);
+    }
+  }
+  projectContacts.set(firstProjectId, existingIds);
+  console.log("[Store] Seeded demo data for org:", orgId);
+}
+
+/** Ensure demo org (Pay-less) has demo data. Call before stats/projects fetch. */
+export async function ensureDemoDataForOrg(orgId: string): Promise<void> {
+  if (getProjectIdsForOrg(orgId).length > 0) return;
+  const org = await getOrganization(orgId);
+  const name = org?.name?.toLowerCase().replace(/\s/g, "") ?? "";
+  if (DEMO_ORG_NAMES.some((n) => name.includes(n) || n.includes(name))) {
+    seedDemoDataForOrg(orgId);
+  }
 }
 
 initStore();
 
-export function getDashboardStats(): {
+/** Get project IDs for an organization */
+function getProjectIdsForOrg(orgId: string): string[] {
+  return Array.from(projects.values())
+    .filter((p) => (p as ProjectWithId & { orgId?: string }).orgId === orgId)
+    .map((p) => p.id);
+}
+
+export function getDashboardStats(orgId: string): {
   contactsUploaded: number;
   callsMade: number;
   successfulCalls: number;
@@ -55,8 +199,10 @@ export function getDashboardStats(): {
   let successfulCalls = 0;
   let unsuccessfulCalls = 0;
   let totalSeconds = 0;
+  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
 
-  for (const ids of projectContacts.values()) {
+  for (const [projId, ids] of projectContacts) {
+    if (!orgProjectIds.has(projId)) continue;
     contactsUploaded += ids.length;
     for (const cid of ids) {
       const c = contacts.get(cid);
@@ -188,10 +334,12 @@ export function getProjectMinutesByDayForChart(projectId: string): ReturnType<ty
   return result;
 }
 
-export function getCallsByDay(): Array<{ date: string; calls: number; successful: number; failed: number }> {
+export function getCallsByDay(orgId: string): Array<{ date: string; calls: number; successful: number; failed: number }> {
   const byDay = new Map<string, { calls: number; successful: number; failed: number }>();
+  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
 
-  for (const ids of projectContacts.values()) {
+  for (const [projId, ids] of projectContacts) {
+    if (!orgProjectIds.has(projId)) continue;
     for (const cid of ids) {
       const c = contacts.get(cid);
       if (!c?.callResult?.attemptedAt) continue;
@@ -209,9 +357,11 @@ export function getCallsByDay(): Array<{ date: string; calls: number; successful
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getMinutesByDay(): Array<{ date: string; minutes: number }> {
+export function getMinutesByDay(orgId: string): Array<{ date: string; minutes: number }> {
   const byDay = new Map<string, number>();
-  for (const ids of projectContacts.values()) {
+  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  for (const [projId, ids] of projectContacts) {
+    if (!orgProjectIds.has(projId)) continue;
     for (const cid of ids) {
       const c = contacts.get(cid);
       if (!c?.callResult?.attemptedAt || !c.callResult.durationSeconds) continue;
@@ -239,61 +389,62 @@ function demoRand(n: number, min: number, max: number): number {
 
 /** Inject demo contacts with call results spread across all working days of the month */
 function injectDemoChartData() {
-  const firstProjectId = Array.from(projects.keys())[0];
-  if (!firstProjectId) return;
-
+  const names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack", "Kate", "Leo"];
+  const failureReasons = ["No answer", "Busy", "Wrong number", "Callback requested"];
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const existingIds = projectContacts.get(firstProjectId) ?? [];
 
-  const names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Henry", "Ivy", "Jack", "Kate", "Leo"];
-  const failureReasons = ["No answer", "Busy", "Wrong number", "Callback requested"];
+  for (const orgId of DEMO_ORG_IDS) {
+    const firstProjectId = Array.from(projects.values()).find((p) => (p as ProjectWithId & { orgId?: string }).orgId === orgId)?.id;
+    if (!firstProjectId) continue;
 
-  for (let day = 1; day <= 31; day++) {
-    const d = new Date(year, month, day);
-    if (!isWorkingDay(d)) continue;
-    const attemptedAt = d.toISOString().slice(0, 10) + "T09:00:00.000Z";
+    const existingIds = projectContacts.get(firstProjectId) ?? [];
 
-    // 4–12 calls per working day, varied
-    const callsToday = demoRand(day * 7, 4, 12);
-    for (let i = 0; i < callsToday; i++) {
-      const seed = day * 100 + i;
-      const isSuccess = demoRand(seed, 0, 100) > 22; // ~78% success rate
-      const durationSeconds = isSuccess ? demoRand(seed + 1, 90, 320) : 0;
-      const cid = nextContactId();
-      const contact: ContactWithId = {
-        id: cid,
-        projectId: firstProjectId,
-        phone: `+27${String(seed + 800000000).padStart(9, "0").slice(-9)}`,
-        name: names[demoRand(seed + 2, 0, names.length - 1)],
-        status: isSuccess ? "success" : "failed",
-        callResult: {
-          durationSeconds: isSuccess ? durationSeconds : undefined,
-          attemptedAt,
-          ...(isSuccess
-            ? { capturedData: { interested: demoRand(seed + 3, 0, 1) ? "Yes" : "No" } }
-            : { failureReason: failureReasons[demoRand(seed + 3, 0, failureReasons.length - 1)] }),
-        },
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString(),
-      };
-      contacts.set(cid, contact);
-      existingIds.push(cid);
+    for (let day = 1; day <= 31; day++) {
+      const d = new Date(year, month, day);
+      if (!isWorkingDay(d)) continue;
+      const attemptedAt = d.toISOString().slice(0, 10) + "T09:00:00.000Z";
+
+      const callsToday = demoRand(day * 7 + orgId.length, 4, 12);
+      for (let i = 0; i < callsToday; i++) {
+        const seed = day * 100 + i;
+        const isSuccess = demoRand(seed, 0, 100) > 22;
+        const durationSeconds = isSuccess ? demoRand(seed + 1, 90, 320) : 0;
+        const cid = nextContactId();
+        const contact: ContactWithId = {
+          id: cid,
+          projectId: firstProjectId,
+          phone: `+27${String(seed + 800000000).padStart(9, "0").slice(-9)}`,
+          name: names[demoRand(seed + 2, 0, names.length - 1)],
+          status: isSuccess ? "success" : "failed",
+          callResult: {
+            durationSeconds: isSuccess ? durationSeconds : undefined,
+            attemptedAt,
+            ...(isSuccess
+              ? { capturedData: { interested: demoRand(seed + 3, 0, 1) ? "Yes" : "No" } }
+              : { failureReason: failureReasons[demoRand(seed + 3, 0, failureReasons.length - 1)] }),
+          },
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        };
+        contacts.set(cid, contact);
+        existingIds.push(cid);
+      }
     }
+    projectContacts.set(firstProjectId, existingIds);
   }
-  projectContacts.set(firstProjectId, existingIds);
 }
 
 /** Get all working days of the current month for chart (Mon–Fri only) */
-export function getCallsByDayForChart(): Array<{
+export function getCallsByDayForChart(orgId: string): Array<{
   date: string;
   label: string;
   calls: number;
   successful: number;
   failed: number;
 }> {
-  const raw = getCallsByDay();
+  const raw = getCallsByDay(orgId);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -317,8 +468,8 @@ export function getCallsByDayForChart(): Array<{
 }
 
 /** Get all working days of the current month for chart (Mon–Fri only) */
-export function getMinutesByDayForChart(): Array<{ date: string; label: string; minutes: number }> {
-  const raw = getMinutesByDay();
+export function getMinutesByDayForChart(orgId: string): Array<{ date: string; label: string; minutes: number }> {
+  const raw = getMinutesByDay(orgId);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -339,10 +490,12 @@ export function getMinutesByDayForChart(): Array<{ date: string; label: string; 
   return result;
 }
 
-export function getDataPointRetrievalStats(): { withData: number; successfulTotal: number; rate: number } {
+export function getDataPointRetrievalStats(orgId: string): { withData: number; successfulTotal: number; rate: number } {
   let withData = 0;
   let successfulTotal = 0;
-  for (const ids of projectContacts.values()) {
+  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  for (const [projId, ids] of projectContacts) {
+    if (!orgProjectIds.has(projId)) continue;
     for (const cid of ids) {
       const c = contacts.get(cid);
       if (!c || c.status !== "success") continue;
@@ -355,15 +508,18 @@ export function getDataPointRetrievalStats(): { withData: number; successfulTota
   return { withData, successfulTotal, rate };
 }
 
-export function duplicateProject(projectId: string): ProjectWithId | null {
+export async function duplicateProject(projectId: string, orgId: string): Promise<ProjectWithId | null> {
   const project = projects.get(projectId);
   if (!project) return null;
+  const proj = project as ProjectWithId & { orgId?: string };
+  if (proj.orgId && proj.orgId !== orgId) return null;
 
-  const newProject = createProject({
+  const newProject = await createProject({
     name: `${project.name} (copy)`,
     description: project.description ?? undefined,
+    orgId,
   });
-  updateProject(newProject.id, {
+  await updateProject(newProject.id, {
     captureFields: project.captureFields,
     agentInstructions: project.agentInstructions,
     status: "draft",
@@ -389,26 +545,85 @@ export function duplicateProject(projectId: string): ProjectWithId | null {
   }
   projectContacts.set(newProject.id, newIds);
 
-  return getProject(newProject.id);
+  return await getProject(newProject.id);
 }
 
-export function listProjects(): ProjectWithId[] {
-  return Array.from(projects.values()).sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+export async function listProjects(orgId: string): Promise<ProjectWithId[]> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const snap = await db.collection(COLLECTIONS.projects).where("orgId", "==", orgId).get();
+      const list: ProjectWithId[] = [];
+      snap.forEach((doc) => {
+        const d = doc.data();
+        const p: ProjectWithId = {
+          id: doc.id,
+          orgId: d.orgId ?? orgId,
+          userId: d.userId ?? "dev-user-1",
+          name: d.name ?? "",
+          description: d.description ?? null,
+          status: (d.status as ProjectWithId["status"]) ?? "draft",
+          captureFields: d.captureFields ?? [],
+          agentInstructions: d.agentInstructions ?? null,
+          createdAt: d.createdAt ?? now(),
+          updatedAt: d.updatedAt ?? now(),
+        };
+        list.push(p);
+        projects.set(doc.id, p);
+      });
+      list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      return list;
+    } catch (e) {
+      console.warn("[Store] listProjects Firestore failed, using in-memory:", (e as Error).message);
+    }
+  }
+  return Array.from(projects.values())
+    .filter((p) => (p as ProjectWithId & { orgId?: string }).orgId === orgId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
-export function getProject(id: string): ProjectWithId | null {
-  return projects.get(id) ?? null;
+export async function getProject(id: string, orgId?: string): Promise<ProjectWithId | null> {
+  let project = projects.get(id) ?? null;
+  if (!project && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.projects).doc(id).get();
+      if (doc.exists && doc.data()) {
+        const d = doc.data()!;
+        project = {
+          id: doc.id,
+          orgId: d.orgId ?? "",
+          userId: d.userId ?? "dev-user-1",
+          name: d.name ?? "",
+          description: d.description ?? null,
+          status: (d.status as ProjectWithId["status"]) ?? "draft",
+          captureFields: d.captureFields ?? [],
+          agentInstructions: d.agentInstructions ?? null,
+          createdAt: d.createdAt ?? now(),
+          updatedAt: d.updatedAt ?? now(),
+        } as ProjectWithId;
+        projects.set(doc.id, project);
+      }
+    } catch (e) {
+      console.warn("[Store] getProject Firestore failed:", (e as Error).message);
+    }
+  }
+  if (!project) return null;
+  if (orgId) {
+    const proj = project as ProjectWithId & { orgId?: string };
+    if (proj.orgId && proj.orgId !== orgId) return null;
+  }
+  return project;
 }
 
-export function createProject(
-  data: { name: string; description?: string }
-): ProjectWithId {
+export async function createProject(
+  data: { name: string; description?: string; orgId: string }
+): Promise<ProjectWithId> {
   const id = `proj-${Date.now()}`;
   const t = now();
   const project: ProjectWithId = {
     id,
+    orgId: data.orgId,
     userId: "dev-user-1",
     name: data.name,
     description: data.description ?? null,
@@ -418,15 +633,24 @@ export function createProject(
     createdAt: t,
     updatedAt: t,
   };
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...doc } = project;
+      await db.collection(COLLECTIONS.projects).doc(id).set(doc);
+    } catch (e) {
+      console.warn("[Store] createProject Firestore failed, using in-memory only:", (e as Error).message);
+    }
+  }
   projects.set(id, project);
   projectContacts.set(id, []);
   return project;
 }
 
-export function updateProject(
+export async function updateProject(
   id: string,
   data: Partial<Pick<ProjectDoc, "name" | "description" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd">>
-): ProjectWithId | null {
+): Promise<ProjectWithId | null> {
   const project = projects.get(id);
   if (!project) return null;
   const updated: ProjectWithId = {
@@ -434,6 +658,15 @@ export function updateProject(
     ...data,
     updatedAt: now(),
   };
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...doc } = updated;
+      await db.collection(COLLECTIONS.projects).doc(id).set(doc, { merge: true });
+    } catch (e) {
+      console.warn("[Store] updateProject Firestore failed:", (e as Error).message);
+    }
+  }
   projects.set(id, updated);
   return updated;
 }
@@ -554,11 +787,11 @@ function generateMockCallResult(
   };
 }
 
-export function runProjectSimulation(projectId: string): { updated: number } {
+export async function runProjectSimulation(projectId: string): Promise<{ updated: number }> {
   const project = projects.get(projectId);
   if (!project) return { updated: 0 };
 
-  updateProject(projectId, { status: "running" });
+  await updateProject(projectId, { status: "running" });
   const queueIds = projectQueue.get(projectId);
   const ids = queueIds && queueIds.size > 0
     ? Array.from(queueIds)
@@ -581,6 +814,549 @@ export function runProjectSimulation(projectId: string): { updated: number } {
   }
 
   if (queueIds && queueIds.size === 0) projectQueue.delete(projectId);
-  updateProject(projectId, { status: "completed" });
+  await updateProject(projectId, { status: "completed" });
   return { updated: count };
+}
+
+/**
+ * Create a new organization and link user as owner.
+ * Automatically adds owner as team member with role "owner".
+ * Persists to Firestore if available, otherwise uses in-memory store.
+ */
+export async function createOrganization(data: {
+  name: string;
+  ownerId: string;
+  ownerEmail?: string;
+  ownerDisplayName?: string;
+  createdAt: string;
+}): Promise<string> {
+  const ownerEmail = data.ownerEmail || "owner@example.com";
+  const ownerName = data.ownerDisplayName || undefined;
+
+  // Try Firestore first if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const orgRef = db.collection(COLLECTIONS.organizations).doc();
+      const orgId = orgRef.id;
+      
+      const orgData: OrganizationDoc = {
+        name: data.name,
+        ownerId: data.ownerId,
+        createdAt: data.createdAt,
+      };
+      
+      await orgRef.set(orgData);
+      
+      // Also create user-org mapping document
+      await db.collection("userOrganizations").doc(data.ownerId).set({
+        orgId,
+        createdAt: data.createdAt,
+      });
+      
+      // Add owner as team member with role "owner"
+      const membersRef = orgRef.collection("members");
+      await membersRef.doc(data.ownerId).set({
+        userId: data.ownerId,
+        email: ownerEmail,
+        name: ownerName ?? null,
+        role: "owner",
+        status: "active",
+        lastActive: data.createdAt,
+      });
+      
+      console.log("[Store] Created organization in Firestore:", { orgId, name: data.name, ownerId: data.ownerId });
+      
+      // Also update in-memory cache for quick access
+      organizations.set(orgId, { ...data, id: orgId });
+      userOrganizations.set(data.ownerId, orgId);
+      const ownerMember: TeamMember = {
+        id: data.ownerId,
+        email: ownerEmail,
+        name: ownerName,
+        role: "owner",
+        orgId,
+        status: "active",
+        lastActive: data.createdAt,
+      };
+      teamMembers.set(data.ownerId, ownerMember);
+      
+      return orgId;
+    } catch (error) {
+      console.warn("[Store] Failed to create organization in Firestore (Firebase may not be configured), falling back to in-memory:", error instanceof Error ? error.message : error);
+      // Fall through to in-memory storage
+    }
+  }
+  
+  // Fallback to in-memory storage
+  const id = `org-${++orgIdCounter}`;
+  organizations.set(id, { ...data, id });
+  userOrganizations.set(data.ownerId, id);
+  // Add owner as team member
+  const ownerMember: TeamMember = {
+    id: data.ownerId,
+    email: ownerEmail,
+    name: ownerName,
+    role: "owner",
+    orgId: id,
+    status: "active",
+    lastActive: data.createdAt,
+  };
+  teamMembers.set(data.ownerId, ownerMember);
+  console.log("[Store] Created organization in-memory:", { id, name: data.name, ownerId: data.ownerId });
+  return id;
+}
+
+/**
+ * Get organization ID for a user.
+ * Checks Firestore first if available, otherwise uses in-memory store.
+ */
+export async function getUserOrganization(userId: string): Promise<string | null> {
+  // Try Firestore first if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const userOrgDoc = await db.collection("userOrganizations").doc(userId).get();
+      
+      if (userOrgDoc.exists) {
+        const data = userOrgDoc.data();
+        const orgId = data?.orgId;
+        if (orgId) {
+          console.log("[Store] Found organization in Firestore:", { userId, orgId });
+          // Update in-memory cache
+          userOrganizations.set(userId, orgId);
+          return orgId;
+        }
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get organization from Firestore (Firebase may not be configured), falling back to in-memory:", error instanceof Error ? error.message : error);
+      // Fall through to in-memory storage
+    }
+  }
+  
+  // Fallback to in-memory storage
+  return userOrganizations.get(userId) ?? null;
+}
+
+/**
+ * Get organization details.
+ * Checks Firestore first if available, otherwise uses in-memory store.
+ */
+export async function getOrganization(orgId: string): Promise<Organization | null> {
+  // Try Firestore first if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const orgDoc = await db.collection(COLLECTIONS.organizations).doc(orgId).get();
+      
+      if (orgDoc.exists) {
+        const data = orgDoc.data() as OrganizationDoc;
+        const org: Organization = {
+          id: orgId,
+          name: data.name,
+          ownerId: data.ownerId,
+          createdAt: data.createdAt,
+        };
+        console.log("[Store] Found organization in Firestore:", org);
+        // Update in-memory cache
+        organizations.set(orgId, org);
+        return org;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get organization from Firestore (Firebase may not be configured), falling back to in-memory:", error instanceof Error ? error.message : error);
+      // Fall through to in-memory storage
+    }
+  }
+  
+  // Fallback to in-memory storage
+  return organizations.get(orgId) ?? null;
+}
+
+/**
+ * Create an invitation token (secure random string).
+ */
+function generateInvitationToken(): string {
+  return `inv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+}
+
+/**
+ * Create a team invitation.
+ * Persists to Firestore if available.
+ */
+export async function createInvitation(data: {
+  email: string;
+  role: "admin" | "operator" | "viewer";
+  orgId: string;
+  invitedBy: string;
+}): Promise<string> {
+  const token = generateInvitationToken();
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+  const email = data.email.toLowerCase().trim();
+
+  const invitation: Invitation = {
+    token,
+    email,
+    role: data.role,
+    orgId: data.orgId,
+    invitedBy: data.invitedBy,
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    accepted: false,
+  };
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.invitations).doc(token).set({
+        email: invitation.email,
+        role: invitation.role,
+        orgId: invitation.orgId,
+        invitedBy: invitation.invitedBy,
+        createdAt: invitation.createdAt,
+        expiresAt: invitation.expiresAt,
+        accepted: false,
+      });
+      // Use token as doc id for invited members (tokens start with "inv_")
+      await db
+        .collection(COLLECTIONS.organizations)
+        .doc(data.orgId)
+        .collection("members")
+        .doc(token)
+        .set({
+          userId: token,
+          email: invitation.email,
+          role: invitation.role,
+          status: "invited",
+          invitedAt: invitation.createdAt,
+        });
+      invitations.set(token, invitation);
+      emailToInvitationToken.set(email, token);
+      return token;
+    } catch (error) {
+      console.warn("[Store] Failed to create invitation in Firestore, falling back to in-memory:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  invitations.set(token, invitation);
+  emailToInvitationToken.set(email, token);
+  const memberId = `user-${++userIdCounter}`;
+  teamMembers.set(memberId, {
+    id: memberId,
+    email: invitation.email,
+    role: invitation.role,
+    orgId: invitation.orgId,
+    status: "invited",
+    invitedAt: invitation.createdAt,
+  });
+  emailToUserId.set(email, memberId);
+  return token;
+}
+
+/**
+ * Get invitation by token.
+ */
+export async function getInvitation(token: string): Promise<Invitation | null> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.invitations).doc(token).get();
+      if (doc.exists) {
+        const d = doc.data();
+        return {
+          token,
+          email: d?.email ?? "",
+          role: d?.role ?? "viewer",
+          orgId: d?.orgId ?? "",
+          invitedBy: d?.invitedBy ?? "",
+          createdAt: d?.createdAt ?? "",
+          expiresAt: d?.expiresAt ?? "",
+          accepted: d?.accepted ?? false,
+        };
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get invitation from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  return invitations.get(token) ?? null;
+}
+
+/**
+ * Accept an invitation and create team member.
+ */
+export function acceptInvitation(token: string, userId: string): { orgId: string; role: string } | null {
+  const invitation = invitations.get(token);
+  if (!invitation) return null;
+
+  // Check if expired
+  if (new Date(invitation.expiresAt) < new Date()) {
+    return null;
+  }
+
+  // Check if already accepted
+  if (invitation.accepted) {
+    return null;
+  }
+
+  // Mark as accepted
+  invitation.accepted = true;
+
+  // Update team member to active
+  const memberId = emailToUserId.get(invitation.email);
+  if (memberId) {
+    const member = teamMembers.get(memberId);
+    if (member) {
+      member.id = userId; // Update to real Firebase userId
+      member.status = "active";
+      member.lastActive = new Date().toISOString();
+      teamMembers.set(userId, member);
+      if (memberId !== userId) {
+        teamMembers.delete(memberId);
+      }
+    }
+  }
+
+  // Link user to organization
+  userOrganizations.set(userId, invitation.orgId);
+
+  return {
+    orgId: invitation.orgId,
+    role: invitation.role,
+  };
+}
+
+/**
+ * Get team members for an organization.
+ * Reads from Firestore (organizations/{orgId}/members) if available, with in-memory fallback.
+ * Optional requestorEmail/requestorDisplayName/requestorId: when requestor is owner and owner has placeholder email, use these.
+ */
+export async function getTeamMembers(
+  orgId: string,
+  opts?: {
+    requestorEmail?: string;
+    requestorDisplayName?: string;
+    requestorId?: string;
+  }
+): Promise<TeamMember[]> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const membersSnap = await db
+        .collection(COLLECTIONS.organizations)
+        .doc(orgId)
+        .collection("members")
+        .get();
+
+      const result: TeamMember[] = [];
+      membersSnap.forEach((doc) => {
+        const d = doc.data();
+        result.push({
+          id: doc.id,
+          email: d.email ?? "",
+          name: d.name ?? undefined,
+          role: d.role ?? "viewer",
+          orgId,
+          status: d.status ?? "active",
+          invitedAt: d.invitedAt,
+          lastActive: d.lastActive,
+        });
+      });
+
+      const org = await getOrganization(orgId);
+      // Enrich owner email/name: Firebase Auth first, then requestor headers (from client)
+      if (org?.ownerId) {
+        const ownerMember = result.find((m) => m.id === org.ownerId);
+        if (ownerMember && (ownerMember.email === "owner@example.com" || !ownerMember.email)) {
+          try {
+            const authUser = await getFirebaseAdminAuth().getUser(org.ownerId);
+            ownerMember.email = authUser.email ?? ownerMember.email;
+            ownerMember.name = authUser.displayName ?? ownerMember.name;
+          } catch {
+            // Firebase Auth getUser may fail (e.g. ADC lacks permission)
+          }
+          // Fallback: use requestor's email/name when they are the owner
+          if ((ownerMember.email === "owner@example.com" || !ownerMember.email) && opts?.requestorId === org.ownerId) {
+            if (opts.requestorEmail) ownerMember.email = opts.requestorEmail;
+            if (opts.requestorDisplayName) ownerMember.name = opts.requestorDisplayName;
+          }
+        }
+      }
+
+      // Ensure owner is always included (e.g. orgs created before owner was auto-added to members)
+      if (org?.ownerId && !result.some((m) => m.id === org.ownerId)) {
+        let email = "owner@example.com";
+        let name: string | undefined;
+        try {
+          const authUser = await getFirebaseAdminAuth().getUser(org.ownerId);
+          email = authUser.email ?? email;
+          name = authUser.displayName ?? undefined;
+        } catch {
+          // Use requestor headers when they are the owner
+          if (opts?.requestorId === org.ownerId) {
+            if (opts.requestorEmail) email = opts.requestorEmail;
+            if (opts.requestorDisplayName) name = opts.requestorDisplayName;
+          }
+        }
+        result.unshift({
+          id: org.ownerId,
+          email,
+          name,
+          role: "owner",
+          orgId,
+          status: "active",
+          lastActive: org.createdAt,
+        });
+      }
+      return result;
+    } catch (error) {
+      console.warn("[Store] Failed to get team members from Firestore, falling back to in-memory:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  return Array.from(teamMembers.values()).filter((m) => m.orgId === orgId);
+}
+
+/**
+ * Get invitation by email.
+ */
+export function getInvitationByEmail(email: string): Invitation | null {
+  const token = emailToInvitationToken.get(email.toLowerCase().trim());
+  if (!token) return null;
+  return invitations.get(token) ?? null;
+}
+
+/**
+ * Update a team member's role.
+ * memberId is either Firebase uid (active) or invitation token (invited).
+ */
+export async function updateTeamMemberRole(
+  orgId: string,
+  memberId: string,
+  newRole: "admin" | "operator" | "viewer"
+): Promise<boolean> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const ref = db
+        .collection(COLLECTIONS.organizations)
+        .doc(orgId)
+        .collection("members")
+        .doc(memberId);
+      const doc = await ref.get();
+      if (doc.exists) {
+        await ref.update({ role: newRole });
+        const member = teamMembers.get(memberId);
+        if (member) member.role = newRole;
+        return true;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to update role in Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  const member = teamMembers.get(memberId);
+  if (member) {
+    member.role = newRole;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Remove a team member or cancel an invitation.
+ * memberId is either Firebase uid (active) or invitation token (invited).
+ */
+export async function removeTeamMember(orgId: string, memberId: string): Promise<boolean> {
+  if (memberId.startsWith("inv_")) {
+    // Invited member - delete from members and invitations
+    if (isFirebaseAdminConfigured()) {
+      try {
+        const db = getFirebaseAdminFirestore();
+        const memberRef = db
+          .collection(COLLECTIONS.organizations)
+          .doc(orgId)
+          .collection("members")
+          .doc(memberId);
+        const memberDoc = await memberRef.get();
+        const email = memberDoc.data()?.email;
+        await memberRef.delete();
+        await db.collection(COLLECTIONS.invitations).doc(memberId).delete();
+        invitations.delete(memberId);
+        if (email) emailToInvitationToken.delete(email);
+        teamMembers.delete(memberId);
+        return true;
+      } catch (error) {
+        console.warn("[Store] Failed to remove member from Firestore:", error instanceof Error ? error.message : error);
+      }
+    }
+    const token = memberId;
+    const member = Array.from(teamMembers.values()).find((m) => m.orgId === orgId && (m.id === token || emailToInvitationToken.get(m.email) === token));
+    if (member) {
+      invitations.delete(token);
+      emailToInvitationToken.delete(member.email);
+      teamMembers.delete(member.id);
+      emailToUserId.delete(member.email);
+      return true;
+    }
+    return deleteInvitation(token);
+  }
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const ref = db
+        .collection(COLLECTIONS.organizations)
+        .doc(orgId)
+        .collection("members")
+        .doc(memberId);
+      const doc = await ref.get();
+      if (doc.exists) {
+        await ref.delete();
+        const member = teamMembers.get(memberId);
+        if (member?.status === "invited") {
+          const token = emailToInvitationToken.get(member.email);
+          if (token) {
+            await db.collection(COLLECTIONS.invitations).doc(token).delete();
+            invitations.delete(token);
+            emailToInvitationToken.delete(member.email);
+          }
+        }
+      }
+      const mem = teamMembers.get(memberId);
+      teamMembers.delete(memberId);
+      if (mem?.email) emailToUserId.delete(mem.email);
+      return true;
+    } catch (error) {
+      console.warn("[Store] Failed to remove member from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  const member = teamMembers.get(memberId);
+  if (member?.status === "invited") {
+    const token = emailToInvitationToken.get(member.email);
+    if (token) {
+      invitations.delete(token);
+      emailToInvitationToken.delete(member.email);
+    }
+    emailToUserId.delete(member.email);
+  }
+  teamMembers.delete(memberId);
+  return true;
+}
+
+/**
+ * Delete invitation (cancel).
+ */
+export function deleteInvitation(token: string): boolean {
+  const invitation = invitations.get(token);
+  if (!invitation) return false;
+
+  invitations.delete(token);
+  emailToInvitationToken.delete(invitation.email);
+
+  // Remove pending team member
+  const memberId = emailToUserId.get(invitation.email);
+  if (memberId) {
+    teamMembers.delete(memberId);
+    emailToUserId.delete(invitation.email);
+  }
+
+  return true;
 }

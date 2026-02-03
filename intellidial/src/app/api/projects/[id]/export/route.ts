@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProject } from "@/lib/data/store";
+import { getOrgFromRequest } from "../../getOrgFromRequest";
 
 function buildCsv(
   project: Awaited<ReturnType<typeof getProject>>,
@@ -62,11 +63,15 @@ function buildCsv(
 }
 
 export async function GET(
-  _request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
-  const project = getProject(id);
+  const project = await getProject(id, org.orgId);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -74,7 +79,7 @@ export async function GET(
   const { listContacts } = await import("@/lib/data/store");
   const { contacts } = listContacts(id, { limit: 10000, offset: 0 });
 
-  const { searchParams } = new URL(_request.url);
+  const { searchParams } = new URL(req.url);
   const failedOnly = searchParams.get("failed") === "true";
   const csv = buildCsv(project, contacts, failedOnly);
   const bom = "\uFEFF";

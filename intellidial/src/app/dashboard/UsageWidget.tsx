@@ -3,18 +3,21 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Zap } from "lucide-react";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 const MOCK_LIMIT = 1000; // Placeholder until tiers exist
 
 export function UsageWidget() {
+  const { user } = useAuth();
   const [callsMade, setCallsMade] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/dashboard/stats")
+    if (!user?.uid) return;
+    fetch("/api/dashboard/stats", { headers: { "x-user-id": user.uid } })
       .then((r) => r.json())
       .then((d) => setCallsMade(d.callsMade ?? 0))
       .catch(() => setCallsMade(0));
-  }, []);
+  }, [user?.uid]);
 
   if (callsMade === null) return null;
 

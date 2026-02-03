@@ -154,12 +154,19 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 md:h-20">
             {/* Logo */}
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
-                <Phone className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-display text-xl font-bold text-slate-900">Intellidial</span>
-            </div>
+            <a 
+              href="/" 
+              onClick={(e) => {
+                e.preventDefault();
+                window.location.reload();
+              }}
+              className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+            >
+              <img src="/intellidial-logo.png" alt="Intellidial" className="h-9 w-auto" />
+              <span className="font-display text-xl font-bold text-slate-900">
+                Intelli<span className="text-teal-600">dial</span>
+              </span>
+            </a>
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
@@ -546,7 +553,9 @@ export default function LandingPage() {
               <div className="inline-flex items-center gap-2 bg-teal-50 text-teal-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-teal-100">
                 Features
               </div>
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">Why Choose Intellidial</h2>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
+                Why Choose Intelli<span className="text-teal-600">dial</span>
+              </h2>
               <p className="mt-4 text-xl text-slate-600">
                 Built for accuracy, speed, and compliance
               </p>
@@ -840,10 +849,19 @@ export default function LandingPage() {
             {/* Logo & Description */}
             <div className="sm:col-span-2 md:col-span-2">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center">
-                  <Phone className="w-4 h-4 text-white" />
-                </div>
-                <span className="text-xl font-bold text-white">Intellidial</span>
+                <a 
+                  href="/" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.location.reload();
+                  }}
+                  className="cursor-pointer hover:opacity-80 transition-opacity"
+                >
+                  <img src="/intellidial-logo.png" alt="Intellidial" className="h-9 w-auto" />
+                </a>
+                <span className="text-xl font-bold text-white">
+                  Intelli<span className="text-teal-400">dial</span>
+                </span>
               </div>
               <p className="text-slate-400 mb-4 max-w-sm">
                 AI-powered phone research at scale. We call hundreds of businesses,
@@ -909,7 +927,9 @@ export default function LandingPage() {
           </div>
 
           <div className="border-t border-slate-800 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <p className="text-sm">© 2026 Intellidial. All rights reserved.</p>
+            <p className="text-sm">
+              © 2026 Intelli<span className="text-teal-400">dial</span>. All rights reserved.
+            </p>
             <div className="flex gap-6 text-sm">
               <a href="#" className="hover:text-teal-400 transition-colors">
                 Privacy Policy

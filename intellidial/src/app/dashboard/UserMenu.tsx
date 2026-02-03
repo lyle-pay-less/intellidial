@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { LogOut, ChevronDown } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 export function UserMenu() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -36,7 +38,7 @@ export function UserMenu() {
         <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="absolute bottom-full right-0 z-50 mb-1 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
           <div className="border-b border-slate-100 px-3 py-2">
             <p className="truncate text-sm font-medium text-slate-900">{displayName}</p>
             {user.email && (
@@ -45,11 +47,12 @@ export function UserMenu() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              signOut();
+            onClick={async () => {
+              await signOut();
               setOpen(false);
+              router.push("/login");
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
           >
             <LogOut className="h-4 w-4" />
             Logout

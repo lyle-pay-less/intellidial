@@ -14,6 +14,7 @@ const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
 
 export const MOCK_PROJECTS: ProjectDoc[] = [
   {
+    orgId: "demo",
     userId: "user-mock-1",
     name: "Q1 Restaurant Outreach",
     description: "Follow-up calls to tier 1 restaurants",
@@ -27,6 +28,7 @@ export const MOCK_PROJECTS: ProjectDoc[] = [
     updatedAt: now,
   },
   {
+    orgId: "demo",
     userId: "user-mock-1",
     name: "Dental Practices — Trial",
     description: "Cold outreach for trial signups",
@@ -40,6 +42,7 @@ export const MOCK_PROJECTS: ProjectDoc[] = [
     updatedAt: now,
   },
   {
+    orgId: "demo",
     userId: "user-mock-1",
     name: "Retail Leads — Draft",
     description: "Draft project",

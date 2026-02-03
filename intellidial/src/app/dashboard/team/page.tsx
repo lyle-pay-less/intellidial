@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth/AuthContext";
 import {
   Users,
   Mail,
@@ -25,6 +26,27 @@ type TeamMember = {
   invitedAt?: string;
   lastActive?: string;
 };
+
+function formatLastActive(value: string | undefined): string {
+  if (!value) return "—";
+  if (value === "Just now" || value.toLowerCase().includes("just")) return "Just now";
+  try {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) return value;
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString();
+  } catch {
+    return value;
+  }
+}
 
 const ROLE_CONFIG: Record<
   UserRole,
@@ -57,6 +79,7 @@ const ROLE_CONFIG: Record<
 };
 
 export default function TeamPage() {
+  const { user } = useAuth();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -67,12 +90,20 @@ export default function TeamPage() {
   const [showRoleMenu, setShowRoleMenu] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchTeam();
-  }, []);
+    if (user?.uid) fetchTeam();
+    else setLoading(false);
+  }, [user?.uid]);
 
   const fetchTeam = async () => {
+    if (!user?.uid) return;
     try {
-      const res = await fetch("/api/team");
+      const res = await fetch("/api/team", {
+        headers: {
+          "x-user-id": user.uid,
+          ...(user.email ? { "x-user-email": user.email } : {}),
+          ...(user.displayName ? { "x-user-display-name": user.displayName } : {}),
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setMembers(data.members || []);
@@ -93,7 +124,10 @@ export default function TeamPage() {
     try {
       const res = await fetch("/api/team/invite", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(user?.uid ? { "x-user-id": user.uid } : {}),
+        },
         body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
       });
 
@@ -112,11 +146,15 @@ export default function TeamPage() {
     }
   };
 
-  const handleUpdateRole = async (userId: string, newRole: UserRole) => {
+  const handleUpdateRole = async (memberId: string, newRole: UserRole) => {
+    if (!user?.uid) return;
     try {
-      const res = await fetch(`/api/team/${userId}`, {
+      const res = await fetch(`/api/team/${memberId}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user.uid,
+        },
         body: JSON.stringify({ role: newRole }),
       });
       if (res.ok) {
@@ -128,20 +166,28 @@ export default function TeamPage() {
     }
   };
 
-  const handleRemoveMember = async (userId: string) => {
+  const handleRemoveMember = async (memberId: string) => {
     if (!confirm("Remove this team member?")) return;
+    if (!user?.uid) return;
 
     try {
-      const res = await fetch(`/api/team/${userId}`, { method: "DELETE" });
+      const res = await fetch(`/api/team/${memberId}`, {
+        method: "DELETE",
+        headers: { "x-user-id": user.uid },
+      });
       if (res.ok) fetchTeam();
     } catch (err) {
       console.error("Failed to remove member", err);
     }
   };
 
-  const handleResendInvite = async (userId: string) => {
+  const handleResendInvite = async (memberId: string) => {
+    if (!user?.uid) return;
     try {
-      await fetch(`/api/team/${userId}/resend`, { method: "POST" });
+      await fetch(`/api/team/${memberId}/resend`, {
+        method: "POST",
+        headers: { "x-user-id": user.uid },
+      });
       setSuccess("Invite resent");
       setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
@@ -338,10 +384,12 @@ export default function TeamPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
-                        {member.lastActive || "—"}
+                        {formatLastActive(member.lastActive)}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {!isOwner && (
+                        {isOwner ? (
+                          <span className="text-xs text-slate-400">Full access</span>
+                        ) : (
                           <button
                             onClick={() => handleRemoveMember(member.id)}
                             className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"

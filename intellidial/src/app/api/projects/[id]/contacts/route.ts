@@ -1,12 +1,21 @@
-import { NextResponse } from "next/server";
-import { listContacts, createContacts } from "@/lib/data/store";
+import { NextRequest, NextResponse } from "next/server";
+import { getProject, listContacts, createContacts } from "@/lib/data/store";
+import { getOrgFromRequest } from "../../getOrgFromRequest";
 
 export async function GET(
-  request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
-  const { searchParams } = new URL(request.url);
+  const project = await getProject(id, org.orgId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const { searchParams } = new URL(req.url);
   const limit = Math.min(
     100,
     Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10))
@@ -20,11 +29,19 @@ export async function GET(
 }
 
 export async function POST(
-  request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
-  const body = await request.json();
+  const project = await getProject(id, org.orgId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const body = await req.json();
   const items = body?.contacts as Array<{ phone: string; name?: string }>;
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(

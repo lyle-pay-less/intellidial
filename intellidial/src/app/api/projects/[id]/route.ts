@@ -1,12 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getProject, updateProject } from "@/lib/data/store";
+import { getOrgFromRequest } from "../getOrgFromRequest";
 
 export async function GET(
-  _request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
-  const project = getProject(id);
+  const project = await getProject(id, org.orgId);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
@@ -14,16 +19,20 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
-  const project = getProject(id);
+  const project = await getProject(id, org.orgId);
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  const body = await request.json();
-  const updated = updateProject(id, {
+  const body = await req.json();
+  const updated = await updateProject(id, {
     name: body?.name,
     description: body?.description,
     industry: body?.industry,

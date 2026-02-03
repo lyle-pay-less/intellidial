@@ -37,6 +37,7 @@ export type AgentQuestion = {
 
 /** Firestore: projects (collection). */
 export type ProjectDoc = {
+  orgId: string;
   userId: string;
   name: string;
   description?: string | null;
@@ -73,9 +74,40 @@ export type ContactDoc = {
   updatedAt: string;
 };
 
+/** Firestore: organizations (collection). */
+export type OrganizationDoc = {
+  name: string;
+  ownerId: string;
+  createdAt: string; // ISO
+};
+
+/** Firestore: teamMembers (subcollection under organizations/{orgId}/members). */
+export type TeamMemberDoc = {
+  userId: string;
+  email: string;
+  name?: string | null;
+  role: "owner" | "admin" | "operator" | "viewer";
+  status: "active" | "invited";
+  invitedAt?: string; // ISO
+  lastActive?: string; // ISO
+};
+
+/** Firestore: invitations (collection). */
+export type InvitationDoc = {
+  email: string;
+  role: "admin" | "operator" | "viewer";
+  orgId: string;
+  invitedBy: string;
+  createdAt: string; // ISO
+  expiresAt: string; // ISO
+  accepted: boolean;
+};
+
 /** Collection names */
 export const COLLECTIONS = {
   users: "users",
   projects: "projects",
   contacts: "contacts",
+  organizations: "organizations",
+  invitations: "invitations",
 } as const;

@@ -1,27 +1,44 @@
-import { NextResponse } from "next/server";
-import { getProjectQueue, setProjectQueue } from "@/lib/data/store";
+import { NextRequest, NextResponse } from "next/server";
+import { getProject, getProjectQueue, setProjectQueue } from "@/lib/data/store";
+import { getOrgFromRequest } from "../../getOrgFromRequest";
 
 export async function GET(
-  _request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ error: "Missing project id" }, { status: 400 });
+  }
+  const project = await getProject(id, org.orgId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
   const contactIds = getProjectQueue(id);
   return NextResponse.json({ contactIds });
 }
 
 export async function PATCH(
-  request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const org = await getOrgFromRequest(req);
+  if (!org) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
   const { id } = await params;
   if (!id) {
     return NextResponse.json({ error: "Missing project id" }, { status: 400 });
   }
-  const body = await request.json();
+  const project = await getProject(id, org.orgId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  const body = await req.json();
   const contactIds = body?.contactIds as string[] | undefined;
   const add = body?.add !== false;
   if (!Array.isArray(contactIds)) {

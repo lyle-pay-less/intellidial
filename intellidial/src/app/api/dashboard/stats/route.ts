@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getDashboardStats,
   getCallsByDayForChart,
   getMinutesByDayForChart,
   getDataPointRetrievalStats,
+  getUserOrganization,
+  ensureDemoDataForOrg,
 } from "@/lib/data/store";
 
 /** Simulate previous period for deltas (WoW ~85%, MoM ~70% of current) */
@@ -30,14 +32,39 @@ function calcDelta(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const userId = request.headers.get("x-user-id");
+  if (!userId) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
+  const orgId = await getUserOrganization(userId);
+  if (!orgId) {
+    return NextResponse.json({
+      contactsUploaded: 0,
+      callsMade: 0,
+      successfulCalls: 0,
+      unsuccessfulCalls: 0,
+      hoursOnCalls: 0,
+      successRate: 0,
+      callsByDay: [],
+      minutesByDay: [],
+      dataRetrievalRate: 0,
+      dataRetrievalWithData: 0,
+      dataRetrievalSuccessfulTotal: 0,
+      period: "all",
+      previous: null,
+      deltas: null,
+    });
+  }
+  await ensureDemoDataForOrg(orgId);
+
   const { searchParams } = new URL(request.url);
   const period = (searchParams.get("period") ?? "all") as "all" | "wow" | "mom";
 
-  const stats = getDashboardStats();
-  const callsByDay = getCallsByDayForChart();
-  const minutesByDay = getMinutesByDayForChart();
-  const dataRetrieval = getDataPointRetrievalStats();
+  const stats = getDashboardStats(orgId);
+  const callsByDay = getCallsByDayForChart(orgId);
+  const minutesByDay = getMinutesByDayForChart(orgId);
+  const dataRetrieval = getDataPointRetrievalStats(orgId);
 
   const previous =
     period !== "all" ? getPreviousStats(stats, period) : null;

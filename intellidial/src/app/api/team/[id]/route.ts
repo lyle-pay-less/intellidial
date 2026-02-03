@@ -1,31 +1,63 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { getUserOrganization, getOrganization, updateTeamMemberRole, removeTeamMember } from "@/lib/data/store";
 
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const userId = request.headers.get("x-user-id");
+  if (!userId) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
+
+  const { id: memberId } = await params;
   const body = await request.json();
   const { role } = body;
 
-  if (!role) {
-    return NextResponse.json({ error: "Role is required" }, { status: 400 });
+  if (!role || !["admin", "operator", "viewer"].includes(role)) {
+    return NextResponse.json({ error: "Valid role is required" }, { status: 400 });
   }
 
-  // Mock update — replace with Firestore
-  console.log(`Updating user ${id} role to ${role}`);
+  const orgId = await getUserOrganization(userId);
+  if (!orgId) {
+    return NextResponse.json({ error: "Not part of an organization" }, { status: 403 });
+  }
 
+  const org = await getOrganization(orgId);
+  if (org?.ownerId === memberId) {
+    return NextResponse.json({ error: "Cannot change owner role" }, { status: 400 });
+  }
+
+  const ok = await updateTeamMemberRole(orgId, memberId, role);
+  if (!ok) {
+    return NextResponse.json({ error: "Failed to update role" }, { status: 404 });
+  }
   return NextResponse.json({ success: true });
 }
 
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const userId = request.headers.get("x-user-id");
+  if (!userId) {
+    return NextResponse.json({ error: "User ID required" }, { status: 401 });
+  }
 
-  // Mock delete — replace with Firestore
-  console.log(`Removing user ${id}`);
+  const { id: memberId } = await params;
+  const orgId = await getUserOrganization(userId);
+  if (!orgId) {
+    return NextResponse.json({ error: "Not part of an organization" }, { status: 403 });
+  }
 
+  const org = await getOrganization(orgId);
+  if (org?.ownerId === memberId) {
+    return NextResponse.json({ error: "Cannot remove owner" }, { status: 400 });
+  }
+
+  const ok = await removeTeamMember(orgId, memberId);
+  if (!ok) {
+    return NextResponse.json({ error: "Failed to remove member" }, { status: 404 });
+  }
   return NextResponse.json({ success: true });
 }

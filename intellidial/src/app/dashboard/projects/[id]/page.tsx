@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
+import { useAuth } from "@/lib/auth/AuthContext";
 import {
   LayoutDashboard,
   Users,
@@ -66,8 +67,13 @@ const HOURLY_RATE = 300;
 const CHART_COLORS = { success: "#14B8A6", failed: "#ef4444", bar: "#14B8A6" };
 
 export default function ProjectDetailPage() {
+  const { user } = useAuth();
   const params = useParams();
   const id = params?.id as string;
+  const authHeaders = useMemo(
+    () => (user?.uid ? { "x-user-id": user.uid } : {}),
+    [user?.uid]
+  );
   const [project, setProject] = useState<ProjectWithId | null>(null);
   const [contacts, setContacts] = useState<ContactWithId[]>([]);
   const [totalContacts, setTotalContacts] = useState(0);
@@ -76,19 +82,20 @@ export default function ProjectDetailPage() {
   const [duplicating, setDuplicating] = useState(false);
 
   const fetchProject = useCallback(async () => {
-    if (!id) return;
-    const res = await fetch(`/api/projects/${id}`);
+    if (!id || !user?.uid) return;
+    const res = await fetch(`/api/projects/${id}`, { headers: authHeaders });
     if (res.ok) {
       const data = await res.json();
       setProject(data);
     }
-  }, [id]);
+  }, [id, authHeaders]);
 
   const fetchContacts = useCallback(
     async (offset = 0, append = false) => {
-      if (!id) return;
+      if (!id || !user?.uid) return;
       const res = await fetch(
-        `/api/projects/${id}/contacts?limit=${PAGE_SIZE}&offset=${offset}`
+        `/api/projects/${id}/contacts?limit=${PAGE_SIZE}&offset=${offset}`,
+        { headers: authHeaders }
       );
       if (res.ok) {
         const data = await res.json();
@@ -97,7 +104,7 @@ export default function ProjectDetailPage() {
         if (!append) setTotalContacts(data.total ?? list.length);
       }
     },
-    [id]
+    [id, authHeaders]
   );
 
   useEffect(() => {
@@ -108,7 +115,7 @@ export default function ProjectDetailPage() {
     Promise.all([fetchProject(), fetchContacts()]).finally(() =>
       setLoading(false)
     );
-  }, [id, fetchProject, fetchContacts]);
+  }, [id, fetchProject, fetchContacts, authHeaders]);
 
   const refreshContacts = () => fetchContacts(0);
 
@@ -133,6 +140,7 @@ export default function ProjectDetailPage() {
     try {
       const res = await fetch(`/api/projects/${id}/duplicate`, {
         method: "POST",
+        headers: authHeaders,
       });
       const data = await res.json();
       if (res.ok && data.id) {
@@ -204,8 +212,12 @@ export default function ProjectDetailPage() {
           contacts={contacts}
           total={totalContacts}
           projectId={id}
+          authHeaders={authHeaders}
           onRun={async () => {
-            await fetch(`/api/projects/${id}/run`, { method: "POST" });
+            await fetch(`/api/projects/${id}/run`, {
+              method: "POST",
+              headers: authHeaders,
+            });
             fetchProject();
             fetchContacts(0);
           }}
@@ -226,7 +238,10 @@ export default function ProjectDetailPage() {
           project={project}
           projectId={id}
           onRun={async () => {
-            await fetch(`/api/projects/${id}/run`, { method: "POST" });
+            await fetch(`/api/projects/${id}/run`, {
+              method: "POST",
+              headers: authHeaders,
+            });
             fetchProject();
             fetchContacts(0);
           }}
@@ -257,6 +272,7 @@ function OverviewTab({
   contacts,
   total,
   projectId,
+  authHeaders,
   onRun,
   onUpdate,
 }: {
@@ -264,6 +280,7 @@ function OverviewTab({
   contacts: ContactWithId[];
   total: number;
   projectId: string;
+  authHeaders: Record<string, string>;
   onRun: () => Promise<void>;
   onUpdate: () => void;
 }) {
@@ -293,17 +310,19 @@ function OverviewTab({
 
   useEffect(() => {
     if (!projectId) return;
-    fetch(`/api/projects/${projectId}/stats`)
+    fetch(`/api/projects/${projectId}/stats`, { headers: authHeaders })
       .then((r) => r.json())
       .then((data) => setStats(data))
       .finally(() => setStatsLoading(false));
-  }, [projectId]);
+  }, [projectId, authHeaders]);
 
   const handleRun = async () => {
     setRunning(true);
     try {
       await onRun();
-      const res = await fetch(`/api/projects/${projectId}/stats`);
+      const res = await fetch(`/api/projects/${projectId}/stats`, {
+        headers: authHeaders,
+      });
       if (res.ok) setStats(await res.json());
     } finally {
       setRunning(false);
@@ -607,7 +626,10 @@ function ContactsTab({
     try {
       const res = await fetch(`/api/projects/${projectId}/contacts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({ contacts: preview }),
       });
       if (!res.ok) throw new Error("Failed to add contacts");
@@ -629,7 +651,10 @@ function ContactsTab({
     try {
       const res = await fetch(`/api/projects/${projectId}/contacts`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           contacts: [{ phone: normalized, name: manualName.trim() || undefined }],
         }),
@@ -863,8 +888,11 @@ function QueueTab({
     setLoading(true);
     try {
       const [contactsRes, queueRes] = await Promise.all([
-        fetch(`/api/projects/${projectId}/contacts?limit=200&status=${statusFilter}`),
-        fetch(`/api/projects/${projectId}/queue`),
+        fetch(
+          `/api/projects/${projectId}/contacts?limit=200&status=${statusFilter}`,
+          { headers: authHeaders }
+        ),
+        fetch(`/api/projects/${projectId}/queue`, { headers: authHeaders }),
       ]);
       if (contactsRes.ok) {
         const data = await contactsRes.json();
@@ -893,7 +921,10 @@ function QueueTab({
     setUpdating(true);
     fetch(`/api/projects/${projectId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
       body: JSON.stringify({
         callWindowStart: callWindowStart || null,
         callWindowEnd: callWindowEnd || null,
@@ -926,7 +957,10 @@ function QueueTab({
     try {
       const res = await fetch(`/api/projects/${projectId}/queue`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({ contactIds: Array.from(selected), add: true }),
       });
       if (res.ok) {
@@ -944,7 +978,10 @@ function QueueTab({
     try {
       const res = await fetch(`/api/projects/${projectId}/queue`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({ contactIds: Array.from(selected), add: false }),
       });
       if (res.ok) {
@@ -963,7 +1000,10 @@ function QueueTab({
       if (ids.length === 0) return;
       const res = await fetch(`/api/projects/${projectId}/queue`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({ contactIds: ids, add: true }),
       });
       if (res.ok) {
@@ -1238,7 +1278,10 @@ function InstructionsTab({
     try {
       const res = await fetch(`/api/projects/${project.id}/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("Generation failed");
@@ -1258,7 +1301,10 @@ function InstructionsTab({
     try {
       const res = await fetch(`/api/projects/${project.id}/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           type: "questions",
           industry: industry === "other" ? industryOther : industry,
@@ -1313,7 +1359,10 @@ function InstructionsTab({
     try {
       const res = await fetch(`/api/projects/${project.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
         body: JSON.stringify({
           industry: industry === "other" ? (industryOther || null) : (industry || null),
           tone: tone.trim() || null,
@@ -2114,7 +2163,8 @@ function ExportTab({
 
   const doExport = async (failedOnly: boolean) => {
     const res = await fetch(
-      `/api/projects/${projectId}/export${failedOnly ? "?failed=true" : ""}`
+      `/api/projects/${projectId}/export${failedOnly ? "?failed=true" : ""}`,
+      { headers: authHeaders }
     );
     if (!res.ok) throw new Error("Export failed");
     const blob = await res.blob();

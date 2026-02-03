@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Mail, Lock, Loader2, Phone, Shield } from "lucide-react";
+import { X, Mail, Lock, Loader2, Shield } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -141,10 +141,10 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
           {/* Branding + slogan (convincer) */}
           <div className="text-center mb-6">
             <div className="flex items-center justify-center gap-2 mb-1">
-              <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-700 rounded-lg flex items-center justify-center">
-                <Phone className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-display text-lg font-semibold text-slate-900">Intellidial</span>
+              <img src="/intellidial-logo.png" alt="Intellidial" className="h-9 w-auto" />
+              <span className="font-display text-lg font-semibold text-slate-900">
+                Intelli<span className="text-teal-600">dial</span>
+              </span>
             </div>
             <p className="text-xs text-slate-500">AI-powered phone research at scale</p>
           </div>

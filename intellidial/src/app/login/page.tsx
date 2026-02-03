@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Phone, Mail, Lock, Loader2 } from "lucide-react";
+import { Mail, Lock, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 // Icon components for social providers (inline SVGs)
@@ -27,33 +27,83 @@ function MicrosoftIcon({ className }: { className?: string }) {
     </svg>
   );
 }
-function GitHubIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-      <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
-    </svg>
-  );
-}
-type SocialProvider = "google" | "microsoft" | "github";
+type SocialProvider = "google" | "microsoft";
 
 const SOCIAL_PROVIDERS: { id: SocialProvider; label: string; Icon: typeof GoogleIcon }[] = [
   { id: "google", label: "Continue with Google", Icon: GoogleIcon },
   { id: "microsoft", label: "Continue with Microsoft", Icon: MicrosoftIcon },
-  { id: "github", label: "Continue with GitHub", Icon: GitHubIcon },
 ];
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, signInWithGoogle, signInWithMicrosoft, signInWithGitHub, signInWithEmail } = useAuth();
+  const { user, signInWithGoogle, signInWithMicrosoft, signInWithEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [checkingOrg, setCheckingOrg] = useState(false);
+
+  // Check for error query params (only for specific error cases from DashboardGuard)
+  // Note: Users without orgs are redirected to /setup, not shown errors here
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    if (error === "org_check_failed") {
+      setMessage({
+        type: "error",
+        text: "Unable to verify organization access. Please try again or contact support.",
+      });
+    }
+    // Removed "no_org" error - users without orgs go to /setup instead
+  }, []);
+
+  const checkOrganizationAndRedirect = useCallback(async () => {
+    if (!user || !user.uid) {
+      return;
+    }
+    
+    setCheckingOrg(true);
+    
+    try {
+      const res = await fetch("/api/auth/check-org", {
+        headers: {
+          "x-user-id": user.uid,
+        },
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        
+        if (data.hasOrganization) {
+          // User has organization, go to dashboard
+          router.replace("/dashboard");
+          return;
+        }
+        
+        // No organization found - redirect to setup to create one
+        // This is the standard flow: new user creates org and becomes owner
+        router.replace("/setup");
+        return;
+      }
+      
+      // API call failed - redirect to setup anyway (user can create org)
+      router.replace("/setup");
+    } catch (err) {
+      console.error("[Login] Failed to check organization", err);
+      // On error, redirect to setup (user can create org)
+      router.replace("/setup");
+    } finally {
+      setCheckingOrg(false);
+    }
+  }, [user, router]);
 
   useEffect(() => {
-    if (user) router.replace("/dashboard");
-  }, [user, router]);
+    if (user && user.uid && !checkingOrg) {
+      // Check organization immediately when user is detected
+      checkOrganizationAndRedirect();
+    }
+  }, [user, checkOrganizationAndRedirect, checkingOrg]);
 
   const handleSocialLogin = async (provider: SocialProvider) => {
     setMessage(null);
@@ -61,16 +111,17 @@ export default function LoginPage() {
     try {
       if (provider === "google") await signInWithGoogle();
       else if (provider === "microsoft") await signInWithMicrosoft();
-      else await signInWithGitHub();
-      router.replace("/dashboard");
+      // After social login, AuthContext will update user state
+      // useEffect will detect user and check organization
+      // DO NOT redirect here - let the useEffect handle it
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong.";
       if (msg.includes("not configured")) {
+        // Dev bypass mode - skip org check
         router.replace("/dashboard");
       } else {
         setMessage({ type: "error", text: msg });
       }
-    } finally {
       setSocialLoading(null);
     }
   };
@@ -81,18 +132,32 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmail(email, password);
-      router.replace("/dashboard");
+      // After login, AuthContext will update user state
+      // useEffect will detect user and check organization
+      // DO NOT redirect here - let the useEffect handle it
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong.";
       if (msg.includes("not configured")) {
+        // Dev bypass mode - skip org check
         router.replace("/dashboard");
       } else {
         setMessage({ type: "error", text: msg });
       }
-    } finally {
       setLoading(false);
     }
   };
+
+  // Show loading while checking organization
+  if (checkingOrg) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-teal-600" />
+          <p className="mt-4 text-slate-600">Setting up your account...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white flex flex-col">
@@ -101,10 +166,10 @@ export default function LoginPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <Link href="/" className="flex items-center gap-2">
-              <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center shadow-lg shadow-teal-500/20">
-                <Phone className="w-4 h-4 text-white" />
-              </div>
-              <span className="font-display text-xl font-bold text-slate-900">Intellidial</span>
+              <img src="/intellidial-logo.png" alt="Intellidial" className="h-9 w-auto" />
+              <span className="font-display text-xl font-bold text-slate-900">
+                Intelli<span className="text-teal-600">dial</span>
+              </span>
             </Link>
             <Link
               href="/"
@@ -119,41 +184,20 @@ export default function LoginPage() {
       {/* Main */}
       <main className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
-          <div className="text-center mb-8">
-            <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">Log in</h1>
-            <p className="mt-2 text-slate-600 text-sm">
-              Access your projects and call results
-            </p>
-          </div>
-
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl shadow-slate-900/5 p-6 sm:p-8 space-y-5">
-            {/* Social login */}
-            <div className="space-y-3">
-              {SOCIAL_PROVIDERS.map(({ id, label, Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => handleSocialLogin(id as SocialProvider)}
-                  disabled={!!socialLoading}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {socialLoading === id ? (
-                    <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
-                  ) : (
-                    <Icon className="w-5 h-5 shrink-0" />
-                  )}
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-slate-200" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="bg-white px-3 text-slate-500">or continue with email</span>
-              </div>
+            {/* Logo and name */}
+            <div className="flex flex-col items-center mb-6">
+              <img 
+                src="/intellidial-logo.png" 
+                alt="Intellidial" 
+                className="h-12 w-12 mb-3"
+              />
+              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                Intelli<span className="text-teal-600">dial</span>
+              </h1>
+              <p className="mt-2 text-slate-600 text-sm">
+                Log in to access your projects and call results
+              </p>
             </div>
 
             {message && (
@@ -218,6 +262,26 @@ export default function LoginPage() {
               )}
             </button>
 
+            {/* Social login icons */}
+            <div className="flex items-center justify-center gap-4 pt-2">
+              {SOCIAL_PROVIDERS.map(({ id, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => handleSocialLogin(id as SocialProvider)}
+                  disabled={!!socialLoading}
+                  className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                  title={id === "google" ? "Continue with Google" : "Continue with Microsoft"}
+                >
+                  {socialLoading === id ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+                  ) : (
+                    <Icon className="w-5 h-5" />
+                  )}
+                </button>
+              ))}
+            </div>
+
             <div className="text-center space-y-1 pt-2">
               <Link
                 href="/dashboard"
@@ -233,8 +297,8 @@ export default function LoginPage() {
               </Link>
               <p className="text-sm text-slate-500">
                 Don&apos;t have an account?{" "}
-                <Link href="/#contact" className="font-medium text-teal-600 hover:text-teal-700">
-                  Get started
+                <Link href="/signup" className="font-medium text-teal-600 hover:text-teal-700">
+                  Sign up
                 </Link>
               </p>
             </div>

@@ -8,9 +8,9 @@ export const metadata: Metadata = {
   keywords: ["AI calling", "phone research", "data verification", "lead qualification", "South Africa", "automated calls"],
   authors: [{ name: "Intellidial" }],
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: "/intellidial-logo.png",
+    shortcut: "/intellidial-logo.png",
+    apple: "/intellidial-logo.png",
   },
   openGraph: {
     title: "Intellidial - AI-Powered Phone Research at Scale",
