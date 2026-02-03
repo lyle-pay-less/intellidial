@@ -8,7 +8,7 @@
 
 import type { ProjectDoc, ContactDoc, OrganizationDoc } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
-import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured } from "@/lib/firebase/admin";
+import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS } from "@/lib/firebase/types";
 
 const now = () => new Date().toISOString();
@@ -16,12 +16,21 @@ const now = () => new Date().toISOString();
 type ProjectWithId = ProjectDoc & { id: string };
 type ContactWithId = ContactDoc & { id: string };
 
-/** Organizations: orgId -> { id, name, ownerId, createdAt } */
+/** Organizations: orgId -> { id, name, ownerId, createdAt, phone/plan/usage } */
 type Organization = {
   id: string;
   name: string;
   ownerId: string;
   createdAt: string;
+  phoneNumberId?: string | null;
+  phoneNumberE164?: string | null;
+  phoneNumberStatus?: "none" | "pending" | "active" | "imported" | null;
+  plan?: "starter" | "growth" | "business" | null;
+  callsLimit?: number;
+  minutesLimit?: number;
+  usagePeriodStart?: string | null;
+  callsUsed?: number;
+  minutesUsed?: number;
 };
 /** Team members: userId -> { id, email, name, role, orgId, status, invitedAt, lastActive } */
 type TeamMember = {
@@ -555,19 +564,8 @@ export async function listProjects(orgId: string): Promise<ProjectWithId[]> {
       const snap = await db.collection(COLLECTIONS.projects).where("orgId", "==", orgId).get();
       const list: ProjectWithId[] = [];
       snap.forEach((doc) => {
-        const d = doc.data();
-        const p: ProjectWithId = {
-          id: doc.id,
-          orgId: d.orgId ?? orgId,
-          userId: d.userId ?? "dev-user-1",
-          name: d.name ?? "",
-          description: d.description ?? null,
-          status: (d.status as ProjectWithId["status"]) ?? "draft",
-          captureFields: d.captureFields ?? [],
-          agentInstructions: d.agentInstructions ?? null,
-          createdAt: d.createdAt ?? now(),
-          updatedAt: d.updatedAt ?? now(),
-        };
+        const d = doc.data() as Record<string, unknown>;
+        const p = projectFromFirestoreDoc(doc.id, d, orgId);
         list.push(p);
         projects.set(doc.id, p);
       });
@@ -582,6 +580,36 @@ export async function listProjects(orgId: string): Promise<ProjectWithId[]> {
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
+/** Build ProjectWithId from Firestore doc data (used by getProject and updateProject when loading from Firestore). */
+function projectFromFirestoreDoc(
+  docId: string,
+  d: Record<string, unknown>,
+  orgIdFallback = ""
+): ProjectWithId {
+  return {
+    id: docId,
+    orgId: (d.orgId as string) ?? orgIdFallback,
+    userId: (d.userId as string) ?? "dev-user-1",
+    name: (d.name as string) ?? "",
+    description: (d.description as string | null) ?? null,
+    status: (d.status as ProjectWithId["status"]) ?? "draft",
+    assistantId: (d.assistantId as string | null) ?? null,
+    structuredOutputId: (d.structuredOutputId as string | null) ?? null,
+    industry: (d.industry as string | null) ?? null,
+    tone: (d.tone as string | null) ?? null,
+    goal: (d.goal as string | null) ?? null,
+    agentQuestions: (d.agentQuestions as ProjectWithId["agentQuestions"]) ?? [],
+    captureFields: (d.captureFields as ProjectWithId["captureFields"]) ?? [],
+    agentInstructions: (d.agentInstructions as string | null) ?? null,
+    notifyOnComplete: d.notifyOnComplete as boolean | undefined,
+    surveyEnabled: (d.surveyEnabled as boolean) ?? false,
+    callWindowStart: (d.callWindowStart as string | null) ?? null,
+    callWindowEnd: (d.callWindowEnd as string | null) ?? null,
+    createdAt: (d.createdAt as string) ?? now(),
+    updatedAt: (d.updatedAt as string) ?? now(),
+  } as ProjectWithId;
+}
+
 export async function getProject(id: string, orgId?: string): Promise<ProjectWithId | null> {
   let project = projects.get(id) ?? null;
   if (!project && isFirebaseAdminConfigured()) {
@@ -589,19 +617,7 @@ export async function getProject(id: string, orgId?: string): Promise<ProjectWit
       const db = getFirebaseAdminFirestore();
       const doc = await db.collection(COLLECTIONS.projects).doc(id).get();
       if (doc.exists && doc.data()) {
-        const d = doc.data()!;
-        project = {
-          id: doc.id,
-          orgId: d.orgId ?? "",
-          userId: d.userId ?? "dev-user-1",
-          name: d.name ?? "",
-          description: d.description ?? null,
-          status: (d.status as ProjectWithId["status"]) ?? "draft",
-          captureFields: d.captureFields ?? [],
-          agentInstructions: d.agentInstructions ?? null,
-          createdAt: d.createdAt ?? now(),
-          updatedAt: d.updatedAt ?? now(),
-        } as ProjectWithId;
+        project = projectFromFirestoreDoc(doc.id, doc.data()!, orgId ?? "");
         projects.set(doc.id, project);
       }
     } catch (e) {
@@ -614,6 +630,34 @@ export async function getProject(id: string, orgId?: string): Promise<ProjectWit
     if (proj.orgId && proj.orgId !== orgId) return null;
   }
   return project;
+}
+
+/** Get project by VAPI assistant ID (for webhook: resolve assistantId → project). */
+export async function getProjectByAssistantId(assistantId: string): Promise<ProjectWithId | null> {
+  if (!assistantId?.trim()) return null;
+  const aid = assistantId.trim();
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const snap = await db
+        .collection(COLLECTIONS.projects)
+        .where("assistantId", "==", aid)
+        .limit(1)
+        .get();
+      if (!snap.empty) {
+        const doc = snap.docs[0];
+        const project = projectFromFirestoreDoc(doc.id, doc.data(), "");
+        projects.set(doc.id, project);
+        return project;
+      }
+    } catch (e) {
+      console.warn("[Store] getProjectByAssistantId Firestore failed:", (e as Error).message);
+    }
+  }
+  const found = Array.from(projects.values()).find(
+    (p) => (p as ProjectWithId & { assistantId?: string }).assistantId === aid
+  );
+  return found ?? null;
 }
 
 export async function createProject(
@@ -649,23 +693,40 @@ export async function createProject(
 
 export async function updateProject(
   id: string,
-  data: Partial<Pick<ProjectDoc, "name" | "description" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd">>
+  data: Partial<Pick<ProjectDoc, "name" | "description" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "structuredOutputId">>
 ): Promise<ProjectWithId | null> {
-  const project = projects.get(id);
+  let project = projects.get(id) ?? null;
+  // Load from Firestore if not in memory (e.g. after server restart) so we can still persist
+  if (!project && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.projects).doc(id).get();
+      if (doc.exists && doc.data()) {
+        project = projectFromFirestoreDoc(doc.id, doc.data()!, "");
+        projects.set(id, project);
+      }
+    } catch (e) {
+      console.warn("[Store] updateProject load from Firestore failed:", (e as Error).message);
+    }
+  }
   if (!project) return null;
+  // Merge only defined values so we don't overwrite with undefined (Firestore would delete those fields)
+  const definedData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Partial<ProjectWithId>;
   const updated: ProjectWithId = {
     ...project,
-    ...data,
+    ...definedData,
     updatedAt: now(),
   };
   if (isFirebaseAdminConfigured()) {
-    try {
-      const db = getFirebaseAdminFirestore();
-      const { id: _id, ...doc } = updated;
-      await db.collection(COLLECTIONS.projects).doc(id).set(doc, { merge: true });
-    } catch (e) {
-      console.warn("[Store] updateProject Firestore failed:", (e as Error).message);
-    }
+    const db = getFirebaseAdminFirestore();
+    const { id: _id, ...rawDoc } = updated;
+    // Omit undefined so Firestore doesn't delete fields
+    const doc = Object.fromEntries(
+      Object.entries(rawDoc).filter(([, v]) => v !== undefined)
+    ) as Record<string, unknown>;
+    await db.collection(COLLECTIONS.projects).doc(id).set(doc, { merge: true });
   }
   projects.set(id, updated);
   return updated;
@@ -685,10 +746,47 @@ export function setProjectQueue(projectId: string, contactIds: string[], add: bo
   else projectQueue.set(projectId, queueSet);
 }
 
-export function listContacts(
+/** Load contacts for a project from Firestore into in-memory store. Called when listContacts finds none in memory. */
+async function hydrateProjectContacts(projectId: string): Promise<void> {
+  if (!isFirebaseAdminConfigured()) return;
+  const existing = projectContacts.get(projectId) ?? [];
+  if (existing.length > 0) return; // Already have contacts in memory
+  try {
+    const db = getFirebaseAdminFirestore();
+    const snap = await db
+      .collection(COLLECTIONS.contacts)
+      .where("projectId", "==", projectId)
+      .get();
+    const loaded: ContactWithId[] = [];
+    snap.forEach((doc) => {
+      const d = doc.data();
+      const contact: ContactWithId = {
+        id: doc.id,
+        projectId: (d.projectId as string) ?? projectId,
+        phone: (d.phone as string) ?? "",
+        name: (d.name as string | null) ?? null,
+        status: (d.status as ContactWithId["status"]) ?? "pending",
+        callResult: d.callResult as ContactWithId["callResult"],
+        lastVapiCallId: (d.lastVapiCallId as string | null) ?? null,
+        vapiCallId: (d.vapiCallId as string | null) ?? null,
+        createdAt: (d.createdAt as string) ?? now(),
+        updatedAt: (d.updatedAt as string) ?? now(),
+      };
+      contacts.set(doc.id, contact);
+      loaded.push(contact);
+    });
+    loaded.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    projectContacts.set(projectId, loaded.map((c) => c.id));
+  } catch (e) {
+    console.warn("[Store] hydrateProjectContacts failed:", (e as Error).message);
+  }
+}
+
+export async function listContacts(
   projectId: string,
   opts?: { limit?: number; offset?: number; status?: "all" | "pending" | "success" | "failed" | "calling" }
-): { contacts: ContactWithId[]; total: number } {
+): Promise<{ contacts: ContactWithId[]; total: number }> {
+  await hydrateProjectContacts(projectId);
   const ids = projectContacts.get(projectId) ?? [];
   const limit = opts?.limit ?? 50;
   const offset = opts?.offset ?? 0;
@@ -707,10 +805,10 @@ export function listContacts(
   return { contacts: pageIds, total };
 }
 
-export function updateContact(
+export async function updateContact(
   contactId: string,
-  data: Partial<Pick<ContactDoc, "status" | "callResult">>
-): ContactWithId | null {
+  data: Partial<Pick<ContactDoc, "status" | "callResult" | "lastVapiCallId" | "vapiCallId">>
+): Promise<ContactWithId | null> {
   const contact = contacts.get(contactId);
   if (!contact) return null;
   const updated: ContactWithId = {
@@ -719,24 +817,40 @@ export function updateContact(
     updatedAt: now(),
   };
   contacts.set(contactId, updated);
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...doc } = updated;
+      const docClean = Object.fromEntries(
+        Object.entries(doc).filter(([, v]) => v !== undefined)
+      ) as Record<string, unknown>;
+      await db.collection(COLLECTIONS.contacts).doc(contactId).set(docClean, { merge: true });
+    } catch (e) {
+      console.warn("[Store] updateContact Firestore failed:", (e as Error).message);
+    }
+  }
   return updated;
 }
 
-export function createContacts(
+export async function createContacts(
   projectId: string,
   items: Array<{ phone: string; name?: string }>
-): ContactWithId[] {
+): Promise<ContactWithId[]> {
   const ids = projectContacts.get(projectId) ?? [];
   const t = now();
   const created: ContactWithId[] = [];
-
   const seen = new Set<string>();
+
+  const db = isFirebaseAdminConfigured() ? getFirebaseAdminFirestore() : null;
+
   for (const item of items) {
     const phone = item.phone.replace(/\s/g, "");
     if (!phone || seen.has(phone)) continue;
     seen.add(phone);
 
-    const id = nextContactId();
+    const id = db
+      ? db.collection(COLLECTIONS.contacts).doc().id
+      : nextContactId();
     const contact: ContactWithId = {
       id,
       projectId,
@@ -746,6 +860,14 @@ export function createContacts(
       createdAt: t,
       updatedAt: t,
     };
+    if (db) {
+      try {
+        const { id: _id, ...doc } = contact;
+        await db.collection(COLLECTIONS.contacts).doc(id).set(doc);
+      } catch (e) {
+        console.warn("[Store] createContacts Firestore failed:", (e as Error).message);
+      }
+    }
     contacts.set(id, contact);
     ids.push(id);
     created.push(contact);
@@ -787,15 +909,31 @@ function generateMockCallResult(
   };
 }
 
-export async function runProjectSimulation(projectId: string): Promise<{ updated: number }> {
+/**
+ * Run the calling simulation. If contactIds is provided, call only those contacts (row-level "Call now").
+ * Otherwise run for the full queue ("Start calling").
+ */
+export async function runProjectSimulation(
+  projectId: string,
+  contactIds?: string[]
+): Promise<{ updated: number }> {
   const project = projects.get(projectId);
   if (!project) return { updated: 0 };
 
   await updateProject(projectId, { status: "running" });
+
+  const ids =
+    contactIds && contactIds.length > 0
+      ? contactIds
+      : (() => {
+          const queueIds = projectQueue.get(projectId);
+          return queueIds && queueIds.size > 0
+            ? Array.from(queueIds)
+            : (projectContacts.get(projectId) ?? []);
+        })();
+
+  const isQueueRun = !contactIds || contactIds.length === 0;
   const queueIds = projectQueue.get(projectId);
-  const ids = queueIds && queueIds.size > 0
-    ? Array.from(queueIds)
-    : (projectContacts.get(projectId) ?? []);
   let count = 0;
 
   for (const cid of ids) {
@@ -808,12 +946,12 @@ export async function runProjectSimulation(projectId: string): Promise<{ updated
       status,
       project.captureFields
     ) as NonNullable<ContactDoc["callResult"]>;
-    updateContact(cid, { status, callResult });
-    if (queueIds) queueIds.delete(cid);
+    await updateContact(cid, { status, callResult });
+    if (isQueueRun && queueIds) queueIds.delete(cid);
     count++;
   }
 
-  if (queueIds && queueIds.size === 0) projectQueue.delete(projectId);
+  if (isQueueRun && queueIds && queueIds.size === 0) projectQueue.delete(projectId);
   await updateProject(projectId, { status: "completed" });
   return { updated: count };
 }
@@ -956,6 +1094,15 @@ export async function getOrganization(orgId: string): Promise<Organization | nul
           name: data.name,
           ownerId: data.ownerId,
           createdAt: data.createdAt,
+          phoneNumberId: data.phoneNumberId ?? null,
+          phoneNumberE164: data.phoneNumberE164 ?? null,
+          phoneNumberStatus: data.phoneNumberStatus ?? null,
+          plan: data.plan ?? null,
+          callsLimit: data.callsLimit,
+          minutesLimit: data.minutesLimit,
+          usagePeriodStart: data.usagePeriodStart ?? null,
+          callsUsed: data.callsUsed,
+          minutesUsed: data.minutesUsed,
         };
         console.log("[Store] Found organization in Firestore:", org);
         // Update in-memory cache
@@ -970,6 +1117,93 @@ export async function getOrganization(orgId: string): Promise<Organization | nul
   
   // Fallback to in-memory storage
   return organizations.get(orgId) ?? null;
+}
+
+/**
+ * Update organization details (e.g. phoneNumberId after VAPI provisioning).
+ * Persists to Firestore when configured; updates in-memory cache.
+ */
+export async function updateOrganization(
+  orgId: string,
+  data: Partial<Pick<OrganizationDoc, "name" | "phoneNumberId" | "phoneNumberE164" | "phoneNumberStatus" | "plan" | "callsLimit" | "minutesLimit" | "usagePeriodStart" | "callsUsed" | "minutesUsed">>
+): Promise<Organization | null> {
+  let org = organizations.get(orgId) ?? null;
+  if (!org && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.organizations).doc(orgId).get();
+      if (doc.exists && doc.data()) {
+        const d = doc.data() as OrganizationDoc;
+        org = {
+          id: orgId,
+          name: d.name,
+          ownerId: d.ownerId,
+          createdAt: d.createdAt,
+          phoneNumberId: d.phoneNumberId ?? null,
+          phoneNumberE164: d.phoneNumberE164 ?? null,
+          phoneNumberStatus: d.phoneNumberStatus ?? null,
+          plan: d.plan ?? null,
+          callsLimit: d.callsLimit,
+          minutesLimit: d.minutesLimit,
+          usagePeriodStart: d.usagePeriodStart ?? null,
+          callsUsed: d.callsUsed,
+          minutesUsed: d.minutesUsed,
+        };
+        organizations.set(orgId, org);
+      }
+    } catch (e) {
+      console.warn("[Store] updateOrganization load from Firestore failed:", (e as Error).message);
+    }
+  }
+  if (!org) return null;
+  const definedData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Partial<Organization>;
+  const updated: Organization = { ...org, ...definedData };
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = Object.fromEntries(
+        Object.entries(updated).filter(([k, v]) => k !== "id" && v !== undefined)
+      ) as Record<string, unknown>;
+      await db.collection(COLLECTIONS.organizations).doc(orgId).set(doc, { merge: true });
+    } catch (e) {
+      console.warn("[Store] updateOrganization Firestore write failed:", (e as Error).message);
+    }
+  }
+  organizations.set(orgId, updated);
+  return updated;
+}
+
+/**
+ * Atomically increment org usage (calls and minutes). Used by call-ended webhook.
+ * When Firestore is configured, uses FieldValue.increment to avoid race conditions.
+ */
+export async function incrementOrgUsage(
+  orgId: string,
+  callsDelta: number,
+  minutesDelta: number
+): Promise<void> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db
+        .collection(COLLECTIONS.organizations)
+        .doc(orgId)
+        .update({
+          callsUsed: FieldValue.increment(callsDelta),
+          minutesUsed: FieldValue.increment(minutesDelta),
+        });
+    } catch (e) {
+      console.warn("[Store] incrementOrgUsage Firestore failed:", (e as Error).message);
+    }
+  }
+  const org = organizations.get(orgId);
+  if (org) {
+    org.callsUsed = (org.callsUsed ?? 0) + callsDelta;
+    org.minutesUsed = (org.minutesUsed ?? 0) + minutesDelta;
+    organizations.set(orgId, org);
+  }
 }
 
 /**

@@ -9,8 +9,10 @@
  */
 
 import { initializeApp, getApps, cert, type ServiceAccount, applicationDefault } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+
+export { FieldValue };
 
 function getAdminApp() {
   if (getApps().length > 0) {

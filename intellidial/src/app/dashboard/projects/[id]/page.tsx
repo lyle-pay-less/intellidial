@@ -231,12 +231,14 @@ export default function ProjectDetailPage() {
           total={totalContacts}
           onRefresh={refreshContacts}
           onLoadMore={() => fetchContacts(contacts.length, true)}
+          authHeaders={authHeaders}
         />
       )}
       {activeTab === "queue" && (
         <QueueTab
           project={project}
           projectId={id}
+          authHeaders={authHeaders}
           onRun={async () => {
             await fetch(`/api/projects/${id}/run`, {
               method: "POST",
@@ -249,7 +251,7 @@ export default function ProjectDetailPage() {
         />
       )}
       {activeTab === "instructions" && (
-        <InstructionsTab project={project} onUpdate={fetchProject} />
+        <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} />
       )}
       {activeTab === "results" && (
         <ResultsTab contacts={contacts} project={project} />
@@ -584,12 +586,14 @@ function ContactsTab({
   total,
   onRefresh,
   onLoadMore,
+  authHeaders,
 }: {
   projectId: string;
   contacts: ContactWithId[];
   total: number;
   onRefresh: () => void;
   onLoadMore: () => Promise<void>;
+  authHeaders: Record<string, string>;
 }) {
   const [pasteText, setPasteText] = useState("");
   const [preview, setPreview] = useState<Array<{ phone: string; name?: string }>>([]);
@@ -861,11 +865,13 @@ type StatusFilter = "all" | "pending" | "failed" | "success" | "calling";
 function QueueTab({
   project,
   projectId,
+  authHeaders,
   onRun,
   onUpdate,
 }: {
   project: ProjectWithId;
   projectId: string;
+  authHeaders: Record<string, string>;
   onRun: () => Promise<void>;
   onUpdate: () => void;
 }) {
@@ -882,7 +888,42 @@ function QueueTab({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [callingNowId, setCallingNowId] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
+  const syncPollRef = useRef<{
+    interval: ReturnType<typeof setInterval>;
+    timeout: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
+  const startSyncPolling = useCallback(() => {
+    const poll = async () => {
+      try {
+        const r = await fetch(`/api/projects/${projectId}/sync-calls`, {
+          headers: authHeaders,
+        });
+        if (r.ok) await fetchData();
+      } catch {
+        // ignore
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      syncPollRef.current = null;
+    }, 120000);
+    syncPollRef.current = { interval, timeout };
+  }, [projectId, authHeaders, fetchData]);
+
+  useEffect(() => {
+    return () => {
+      if (syncPollRef.current) {
+        clearInterval(syncPollRef.current.interval);
+        clearTimeout(syncPollRef.current.timeout);
+      }
+    };
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -906,7 +947,7 @@ function QueueTab({
     } finally {
       setLoading(false);
     }
-  }, [projectId, statusFilter]);
+  }, [projectId, statusFilter, authHeaders]);
 
   useEffect(() => {
     fetchData();
@@ -1017,11 +1058,73 @@ function QueueTab({
 
   const handleRun = async () => {
     setRunning(true);
+    setCallError(null);
+    const contactIdsToCall =
+      queueIds.size > 0
+        ? Array.from(queueIds)
+        : contacts.filter((c) => c.status === "pending" || c.status === "calling").map((c) => c.id);
+    if (contactIdsToCall.length === 0) {
+      setRunning(false);
+      return;
+    }
     try {
-      await onRun();
-      fetchData();
+      const res = await fetch(`/api/projects/${projectId}/call`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({ contactIds: contactIdsToCall }),
+      });
+      if (res.ok) {
+        await fetchData();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 503) {
+        await onRun();
+        await fetchData();
+        return;
+      }
+      setCallError(data?.error ?? "Call failed");
     } finally {
       setRunning(false);
+    }
+  };
+
+  const handleCallNow = async (contactId: string) => {
+    setCallingNowId(contactId);
+    setCallError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/call`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({ contactId }),
+      });
+      if (res.ok) {
+        await fetchData();
+        startSyncPolling();
+        return;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 503) {
+        const runRes = await fetch(`/api/projects/${projectId}/run`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          body: JSON.stringify({ contactIds: [contactId] }),
+        });
+        if (runRes.ok) await fetchData();
+        return;
+      }
+      setCallError(data?.error ?? "Call failed");
+    } finally {
+      setCallingNowId(null);
     }
   };
 
@@ -1083,6 +1186,18 @@ function QueueTab({
         </div>
       </div>
 
+      {callError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {callError}
+          <button
+            type="button"
+            onClick={() => setCallError(null)}
+            className="ml-2 underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-slate-700">
@@ -1158,6 +1273,7 @@ function QueueTab({
                 <th className="px-4 py-3 text-left font-medium text-slate-700">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-700">Status</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-700">In queue</th>
+                <th className="px-4 py-3 text-right font-medium text-slate-700">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1198,6 +1314,26 @@ function QueueTab({
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    {c.status === "pending" || c.status === "failed" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCallNow(c.id)}
+                        disabled={callingNowId !== null}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={c.status === "failed" ? "Retry call" : "Call this contact only"}
+                      >
+                        {callingNowId === c.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Phone className="h-3.5 w-3.5" />
+                        )}
+                        {c.status === "failed" ? "Retry" : "Call now"}
+                      </button>
+                    ) : (
+                      <span className="text-slate-400 text-xs">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1222,9 +1358,11 @@ const INDUSTRIES = [
 function InstructionsTab({
   project,
   onUpdate,
+  authHeaders,
 }: {
   project: ProjectWithId;
   onUpdate: () => void;
+  authHeaders: Record<string, string>;
 }) {
   const [industry, setIndustry] = useState(project.industry ?? "");
   const [industryOther, setIndustryOther] = useState("");
@@ -1265,6 +1403,7 @@ function InstructionsTab({
 
   const generate = async (type: string) => {
     setGenerating(type);
+    setError(null);
     const industryVal = industry === "other" ? industryOther : industry;
     const body: Record<string, unknown> = {
       type,
@@ -1284,13 +1423,18 @@ function InstructionsTab({
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("Generation failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Generation failed (${res.status})`);
+      }
       const data = await res.json();
       if (type === "tone" && data.tone) setTone(data.tone);
       if (type === "goal" && data.goal) setGoal(data.goal);
       if (type === "questions" && data.questions) setAgentQuestions(data.questions);
       if (type === "fieldNames" && data.captureFields) setCaptureFields(data.captureFields);
       if (type === "script" && data.agentInstructions) setAgentInstructions(data.agentInstructions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
       setGenerating(null);
     }
@@ -1298,6 +1442,7 @@ function InstructionsTab({
 
   const generateMoreQuestions = async () => {
     setGenerating("questions");
+    setError(null);
     try {
       const res = await fetch(`/api/projects/${project.id}/generate`, {
         method: "POST",
@@ -1312,9 +1457,14 @@ function InstructionsTab({
           existing: agentQuestions.map((q) => q.text),
         }),
       });
-      if (!res.ok) throw new Error("Generation failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Generation failed (${res.status})`);
+      }
       const data = await res.json();
       if (data.questions) setAgentQuestions((prev) => [...prev, ...data.questions]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
       setGenerating(null);
     }

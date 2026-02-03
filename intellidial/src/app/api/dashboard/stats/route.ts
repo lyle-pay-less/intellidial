@@ -5,6 +5,7 @@ import {
   getMinutesByDayForChart,
   getDataPointRetrievalStats,
   getUserOrganization,
+  getOrganization,
   ensureDemoDataForOrg,
 } from "@/lib/data/store";
 
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
       unsuccessfulCalls: 0,
       hoursOnCalls: 0,
       successRate: 0,
+      usage: { callsUsed: 0, callsLimit: null, minutesUsed: 0, minutesLimit: null },
       callsByDay: [],
       minutesByDay: [],
       dataRetrievalRate: 0,
@@ -60,6 +62,16 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const period = (searchParams.get("period") ?? "all") as "all" | "wow" | "mom";
+
+  const org = await getOrganization(orgId);
+  const usage = org
+    ? {
+        callsUsed: org.callsUsed ?? 0,
+        callsLimit: org.callsLimit ?? null,
+        minutesUsed: org.minutesUsed ?? 0,
+        minutesLimit: org.minutesLimit ?? null,
+      }
+    : { callsUsed: 0, callsLimit: null, minutesUsed: 0, minutesLimit: null };
 
   const stats = getDashboardStats(orgId);
   const callsByDay = getCallsByDayForChart(orgId);
@@ -82,6 +94,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ...stats,
+    usage,
     callsByDay,
     minutesByDay,
     dataRetrievalRate: dataRetrieval.rate,

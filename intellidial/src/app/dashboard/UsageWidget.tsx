@@ -5,30 +5,32 @@ import Link from "next/link";
 import { Zap } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
-const MOCK_LIMIT = 1000; // Placeholder until tiers exist
+type Usage = { callsUsed: number; callsLimit: number | null; minutesUsed: number; minutesLimit: number | null };
 
 export function UsageWidget() {
   const { user } = useAuth();
-  const [callsMade, setCallsMade] = useState<number | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
 
   useEffect(() => {
     if (!user?.uid) return;
     fetch("/api/dashboard/stats", { headers: { "x-user-id": user.uid } })
       .then((r) => r.json())
-      .then((d) => setCallsMade(d.callsMade ?? 0))
-      .catch(() => setCallsMade(0));
+      .then((d) => setUsage(d.usage ?? { callsUsed: 0, callsLimit: null, minutesUsed: 0, minutesLimit: null }))
+      .catch(() => setUsage({ callsUsed: 0, callsLimit: null, minutesUsed: 0, minutesLimit: null }));
   }, [user?.uid]);
 
-  if (callsMade === null) return null;
+  if (usage === null) return null;
 
-  const percent = Math.min(100, (callsMade / MOCK_LIMIT) * 100);
-  const nearLimit = percent >= 80;
+  const callsUsed = usage.callsUsed ?? 0;
+  const callsLimit = usage.callsLimit ?? null;
+  const percent = callsLimit != null && callsLimit > 0 ? Math.min(100, (callsUsed / callsLimit) * 100) : 0;
+  const nearLimit = callsLimit != null && callsLimit > 0 && percent >= 80;
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
       <p className="text-xs font-medium text-slate-700">Calls used</p>
       <p className="text-sm font-bold text-slate-900">
-        {callsMade} / {MOCK_LIMIT}
+        {callsUsed} / {callsLimit != null ? callsLimit : "Unlimited"}
       </p>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
         <div
