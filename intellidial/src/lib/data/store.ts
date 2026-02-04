@@ -195,7 +195,7 @@ function getProjectIdsForOrg(orgId: string): string[] {
     .map((p) => p.id);
 }
 
-export function getDashboardStats(orgId: string): {
+export function getDashboardStats(orgId: string, filterProjectIds?: string[]): {
   contactsUploaded: number;
   callsMade: number;
   successfulCalls: number;
@@ -208,7 +208,9 @@ export function getDashboardStats(orgId: string): {
   let successfulCalls = 0;
   let unsuccessfulCalls = 0;
   let totalSeconds = 0;
-  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  const orgProjectIds = new Set(
+    filterProjectIds?.length ? filterProjectIds : getProjectIdsForOrg(orgId)
+  );
 
   for (const [projId, ids] of projectContacts) {
     if (!orgProjectIds.has(projId)) continue;
@@ -343,9 +345,11 @@ export function getProjectMinutesByDayForChart(projectId: string): ReturnType<ty
   return result;
 }
 
-export function getCallsByDay(orgId: string): Array<{ date: string; calls: number; successful: number; failed: number }> {
+export function getCallsByDay(orgId: string, filterProjectIds?: string[]): Array<{ date: string; calls: number; successful: number; failed: number }> {
   const byDay = new Map<string, { calls: number; successful: number; failed: number }>();
-  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  const orgProjectIds = new Set(
+    filterProjectIds?.length ? filterProjectIds : getProjectIdsForOrg(orgId)
+  );
 
   for (const [projId, ids] of projectContacts) {
     if (!orgProjectIds.has(projId)) continue;
@@ -366,9 +370,11 @@ export function getCallsByDay(orgId: string): Array<{ date: string; calls: numbe
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getMinutesByDay(orgId: string): Array<{ date: string; minutes: number }> {
+export function getMinutesByDay(orgId: string, filterProjectIds?: string[]): Array<{ date: string; minutes: number }> {
   const byDay = new Map<string, number>();
-  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  const orgProjectIds = new Set(
+    filterProjectIds?.length ? filterProjectIds : getProjectIdsForOrg(orgId)
+  );
   for (const [projId, ids] of projectContacts) {
     if (!orgProjectIds.has(projId)) continue;
     for (const cid of ids) {
@@ -446,14 +452,14 @@ function injectDemoChartData() {
 }
 
 /** Get all working days of the current month for chart (Mon–Fri only) */
-export function getCallsByDayForChart(orgId: string): Array<{
+export function getCallsByDayForChart(orgId: string, filterProjectIds?: string[]): Array<{
   date: string;
   label: string;
   calls: number;
   successful: number;
   failed: number;
 }> {
-  const raw = getCallsByDay(orgId);
+  const raw = getCallsByDay(orgId, filterProjectIds);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -477,8 +483,8 @@ export function getCallsByDayForChart(orgId: string): Array<{
 }
 
 /** Get all working days of the current month for chart (Mon–Fri only) */
-export function getMinutesByDayForChart(orgId: string): Array<{ date: string; label: string; minutes: number }> {
-  const raw = getMinutesByDay(orgId);
+export function getMinutesByDayForChart(orgId: string, filterProjectIds?: string[]): Array<{ date: string; label: string; minutes: number }> {
+  const raw = getMinutesByDay(orgId, filterProjectIds);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
@@ -499,10 +505,12 @@ export function getMinutesByDayForChart(orgId: string): Array<{ date: string; la
   return result;
 }
 
-export function getDataPointRetrievalStats(orgId: string): { withData: number; successfulTotal: number; rate: number } {
+export function getDataPointRetrievalStats(orgId: string, filterProjectIds?: string[]): { withData: number; successfulTotal: number; rate: number } {
   let withData = 0;
   let successfulTotal = 0;
-  const orgProjectIds = new Set(getProjectIdsForOrg(orgId));
+  const orgProjectIds = new Set(
+    filterProjectIds?.length ? filterProjectIds : getProjectIdsForOrg(orgId)
+  );
   for (const [projId, ids] of projectContacts) {
     if (!orgProjectIds.has(projId)) continue;
     for (const cid of ids) {
@@ -805,6 +813,20 @@ export async function listContacts(
   return { contacts: pageIds, total };
 }
 
+/** Recursively remove undefined values so Firestore accepts the document (Firestore rejects undefined). */
+function stripUndefined<T>(obj: T): T {
+  if (obj === undefined || obj === null) return obj;
+  if (Array.isArray(obj)) return obj.map(stripUndefined) as T;
+  if (typeof obj === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return obj;
+}
+
 export async function updateContact(
   contactId: string,
   data: Partial<Pick<ContactDoc, "status" | "callResult" | "lastVapiCallId" | "vapiCallId">>
@@ -821,9 +843,7 @@ export async function updateContact(
     try {
       const db = getFirebaseAdminFirestore();
       const { id: _id, ...doc } = updated;
-      const docClean = Object.fromEntries(
-        Object.entries(doc).filter(([, v]) => v !== undefined)
-      ) as Record<string, unknown>;
+      const docClean = stripUndefined(doc) as Record<string, unknown>;
       await db.collection(COLLECTIONS.contacts).doc(contactId).set(docClean, { merge: true });
     } catch (e) {
       console.warn("[Store] updateContact Firestore failed:", (e as Error).message);

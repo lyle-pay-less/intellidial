@@ -340,9 +340,35 @@ export async function createOutboundCall(params: {
 }): Promise<string> {
   const { assistantId, phoneNumberId, customerNumber, customerName } = params;
   let number = customerNumber.trim().replace(/\s/g, "");
-  if (number.startsWith("+0")) number = "+27" + number.slice(2);
-  else if (number.startsWith("0")) number = "+27" + number.slice(1);
-  else if (!number.startsWith("+")) number = "+27" + number;
+  
+  // Normalize South African numbers
+  // Handle malformed numbers like +084 -> treat as 084
+  if (number.startsWith("+0") && number.length > 3) {
+    // Remove the + and normalize as if it started with 0
+    number = number.slice(1);
+  }
+  
+  if (number.startsWith("0")) {
+    // Handle cases like 084 -> +2784
+    number = "+27" + number.slice(1);
+  } else if (!number.startsWith("+")) {
+    // Handle cases like 844050294 -> +27844050294
+    number = "+27" + number;
+  } else if (number.startsWith("+27")) {
+    // Already in correct format
+    number = number;
+  } else {
+    // Other country codes - keep as is but log warning
+    console.warn("[VAPI] createOutboundCall: non-SA number format", number);
+  }
+  
+  console.log("[VAPI] createOutboundCall: normalized number", customerNumber.trim(), "->", number);
+
+  // Validate: South African numbers should be +27 followed by 9 digits (mobile) or 8-9 digits (landline)
+  const digitsAfterCountryCode = number.slice(3).replace(/\D/g, "");
+  if (digitsAfterCountryCode.length < 8 || digitsAfterCountryCode.length > 9) {
+    console.warn("[VAPI] createOutboundCall: suspicious number length", number, "digits:", digitsAfterCountryCode.length);
+  }
 
   const payload: VapiCallPayload = {
     assistantId,
@@ -352,6 +378,8 @@ export async function createOutboundCall(params: {
       ...(customerName ? { name: customerName.slice(0, 40) } : {}),
     },
   };
+
+  console.log("[VAPI] createOutboundCall: payload", JSON.stringify(payload, null, 2));
 
   const res = await fetch(`${VAPI_BASE}/call/phone`, {
     method: "POST",
@@ -363,16 +391,27 @@ export async function createOutboundCall(params: {
     const text = await res.text();
     let message = `VAPI create call failed: ${res.status}`;
     try {
-      const json = JSON.parse(text) as { message?: string; error?: string };
+      const json = JSON.parse(text) as { message?: string; error?: string; details?: string };
       message = json.message ?? json.error ?? message;
+      if (json.details) message += ` — ${json.details}`;
     } catch {
       if (text) message += ` — ${text.slice(0, 200)}`;
     }
-    console.error("[VAPI] createOutboundCall error:", message);
+    console.error("[VAPI] createOutboundCall error:", {
+      status: res.status,
+      message,
+      phoneNumber: number,
+      assistantId,
+      phoneNumberId,
+    });
     throw new Error(message);
   }
 
-  const data = (await res.json()) as { id: string };
+  const data = (await res.json()) as { id: string; status?: string; error?: string; message?: string };
+  console.log("[VAPI] createOutboundCall: response", JSON.stringify(data, null, 2));
+  if (data.error || data.message) {
+    console.warn("[VAPI] createOutboundCall: warning in response", { error: data.error, message: data.message });
+  }
   return data.id;
 }
 
@@ -387,6 +426,7 @@ export type VapiCallResponse = {
   id: string;
   status?: string | null;
   endedReason?: string | null;
+  createdAt?: string | null;
   startedAt?: string | null;
   endedAt?: string | null;
   assistantId?: string | null;
@@ -431,9 +471,29 @@ export async function getCall(callId: string): Promise<VapiCallResponse | null> 
     headers: getVapiHeaders(),
   });
   if (!res.ok) {
-    if (res.status === 404) return null;
-    console.warn("[VAPI] getCall error:", res.status, await res.text().catch(() => ""));
+    if (res.status === 404) {
+      console.warn("[VAPI] getCall: call not found", callId);
+      return null;
+    }
+    const errorText = await res.text().catch(() => "");
+    console.error("[VAPI] getCall error:", {
+      callId,
+      status: res.status,
+      error: errorText.slice(0, 500),
+    });
     return null;
   }
-  return (await res.json()) as VapiCallResponse;
+  const data = await res.json() as VapiCallResponse;
+  // Log full response for debugging stuck calls
+  if (data.status === "queued") {
+    console.log("[VAPI] getCall: call still queued", {
+      callId,
+      status: data.status,
+      createdAt: data.createdAt,
+      startedAt: data.startedAt,
+      endedAt: data.endedAt,
+      endedReason: data.endedReason,
+    });
+  }
+  return data;
 }

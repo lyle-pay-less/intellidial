@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  listProjects,
+  listContacts,
   getDashboardStats,
   getCallsByDayForChart,
   getMinutesByDayForChart,
@@ -60,8 +62,18 @@ export async function GET(request: NextRequest) {
   }
   await ensureDemoDataForOrg(orgId);
 
+  const projectList = await listProjects(orgId);
+  for (const proj of projectList) {
+    await listContacts(proj.id, { limit: 1 });
+  }
+
   const { searchParams } = new URL(request.url);
   const period = (searchParams.get("period") ?? "all") as "all" | "wow" | "mom";
+  const projectIdsParam = searchParams.get("projectIds");
+  const projectIds: string[] | undefined =
+    projectIdsParam?.trim()
+      ? projectIdsParam.split(",").map((id) => id.trim()).filter(Boolean)
+      : undefined;
 
   const org = await getOrganization(orgId);
   const usage = org
@@ -73,10 +85,10 @@ export async function GET(request: NextRequest) {
       }
     : { callsUsed: 0, callsLimit: null, minutesUsed: 0, minutesLimit: null };
 
-  const stats = getDashboardStats(orgId);
-  const callsByDay = getCallsByDayForChart(orgId);
-  const minutesByDay = getMinutesByDayForChart(orgId);
-  const dataRetrieval = getDataPointRetrievalStats(orgId);
+  const stats = getDashboardStats(orgId, projectIds);
+  const callsByDay = getCallsByDayForChart(orgId, projectIds);
+  const minutesByDay = getMinutesByDayForChart(orgId, projectIds);
+  const dataRetrieval = getDataPointRetrievalStats(orgId, projectIds);
 
   const previous =
     period !== "all" ? getPreviousStats(stats, period) : null;

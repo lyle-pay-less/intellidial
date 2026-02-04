@@ -68,6 +68,7 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"all" | "wow" | "mom">("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!user?.uid) {
@@ -76,44 +77,81 @@ export default function DashboardPage() {
     }
     const headers = { "x-user-id": user.uid };
     Promise.all([
-      fetch(`/api/dashboard/stats?period=${period}`, { headers }).then((r) => r.json()),
       fetch("/api/projects", { headers }).then((r) => r.json()),
     ])
-      .then(([statsData, projectsData]) => {
-        setStats(statsData);
-        setProjects(Array.isArray(projectsData) ? projectsData.slice(0, 5) : []);
+      .then(([projectsData]) => {
+        setProjects(Array.isArray(projectsData) ? projectsData : []);
       })
+      .catch(() => setProjects([]));
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+    const headers = { "x-user-id": user.uid };
+    const params = new URLSearchParams({ period });
+    if (projectFilter && projectFilter !== "all") {
+      params.set("projectIds", projectFilter);
+    }
+    setLoading(true);
+    fetch(`/api/dashboard/stats?${params}`, { headers })
+      .then((r) => r.json())
+      .then(setStats)
       .finally(() => setLoading(false));
-  }, [period, user?.uid]);
+  }, [period, projectFilter, user?.uid]);
 
   return (
     <div className="p-6 md:p-8">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <LayoutDashboard className="h-6 w-6 text-teal-600" />
-          <h1 className="font-display text-2xl font-bold text-slate-900">
-            Dashboard
-          </h1>
+        <div>
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="h-6 w-6 text-teal-600" />
+            <h1 className="font-display text-2xl font-bold text-slate-900">
+              Dashboard
+            </h1>
+          </div>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {projectFilter === "all" ? "Sum of all projects" : "Filtered by selected project"}
+          </p>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
-          <PeriodButton
-            active={period === "all"}
-            onClick={() => setPeriod("all")}
-          >
-            All time
-          </PeriodButton>
-          <PeriodButton
-            active={period === "wow"}
-            onClick={() => setPeriod("wow")}
-          >
-            WoW
-          </PeriodButton>
-          <PeriodButton
-            active={period === "mom"}
-            onClick={() => setPeriod("mom")}
-          >
-            MoM
-          </PeriodButton>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-slate-700">Project:</span>
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+            >
+              <option value="all">All projects</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+            <PeriodButton
+              active={period === "all"}
+              onClick={() => setPeriod("all")}
+            >
+              All time
+            </PeriodButton>
+            <PeriodButton
+              active={period === "wow"}
+              onClick={() => setPeriod("wow")}
+            >
+              WoW
+            </PeriodButton>
+            <PeriodButton
+              active={period === "mom"}
+              onClick={() => setPeriod("mom")}
+            >
+              MoM
+            </PeriodButton>
+          </div>
         </div>
       </div>
 

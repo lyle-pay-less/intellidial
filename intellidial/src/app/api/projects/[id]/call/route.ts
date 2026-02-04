@@ -107,6 +107,7 @@ export async function POST(
   try {
     const assistantId = await ensureProjectAssistantId(projectId, org.orgId);
     const phoneNumberId = getPhoneNumberIdForCall();
+    console.log("[Call API] Using phone number ID:", phoneNumberId);
     const callIds: string[] = [];
 
     for (const contact of toCall) {
@@ -118,22 +119,56 @@ export async function POST(
           customerNumber: contact.phone,
           customerName: contact.name,
         });
+        console.log("[Call API] VAPI call created:", { 
+          callId, 
+          contactId: contact.id, 
+          phone: contact.phone,
+          normalizedPhone: contact.phone.startsWith("+0") ? "+27" + contact.phone.slice(2) : contact.phone,
+          assistantId,
+          phoneNumberId,
+        });
+        
+        // Immediately check call status to catch early failures
+        try {
+          const { getCall } = await import("@/lib/vapi/client");
+          const immediateStatus = await getCall(callId);
+          console.log("[Call API] Immediate call status check:", {
+            callId,
+            status: immediateStatus?.status,
+            startedAt: immediateStatus?.startedAt,
+            endedAt: immediateStatus?.endedAt,
+            endedReason: immediateStatus?.endedReason,
+          });
+        } catch (statusErr) {
+          console.warn("[Call API] Could not check immediate status:", statusErr);
+        }
+        
         callIds.push(callId);
         await updateContact(contact.id, { vapiCallId: callId });
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error("[Call API] Failed to create call:", {
+          contactId: contact.id,
+          phone: contact.phone,
+          error: errorMessage,
+        });
         await updateContact(contact.id, {
           status: "failed",
           callResult: {
             attemptedAt: new Date().toISOString(),
-            failureReason: err instanceof Error ? err.message : "Call failed",
+            failureReason: errorMessage,
           },
         });
-        const message = err instanceof Error ? err.message : String(err);
-        return NextResponse.json(
-          { error: message, callIds },
-          { status: 502 }
-        );
+        // Continue with other contacts instead of returning early
+        // This allows batch calls to proceed even if one fails
       }
+    }
+
+    if (callIds.length === 0) {
+      return NextResponse.json(
+        { error: "Failed to create any calls. Check phone numbers and VAPI configuration." },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({ callIds });

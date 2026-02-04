@@ -2,6 +2,8 @@
 
 What else needs to be done to complete the app. Grouped by priority and area.
 
+**Progress:** ~80–85% toward testable MVP. Core loop works (signup → project → contacts → real call → results). Remaining: E2E validation, build fix, real email, deployment, polish.
+
 ---
 
 ## Done ✅
@@ -9,15 +11,16 @@ What else needs to be done to complete the app. Grouped by priority and area.
 - **Auth & org hierarchy** — Firebase Auth, org creation, signup, setup, invite flow
 - **Data segregation** — Projects, contacts, dashboard stats scoped by org
 - **Firestore persistence** — Orgs, projects, team members, invitations, **contacts** (top-level `contacts` with `projectId`)
-- **Dashboard** — KPIs, charts, projects list, project detail
+- **Dashboard** — KPIs, charts, projects list, project detail; **home dashboard = sum of all projects**; **project filter** (dropdown); hydrate all org project contacts before stats so data is captured and persisted
 - **Contacts** — Paste numbers, CSV upload, manual entry, queue (persisted to Firestore)
 - **Instructions tab** — Capture fields, agent script, mock AI generate
-- **Results & export** — Call table, transcript, recording, captured data columns, CSV export
+- **Results & export** — Call table, transcript, recording, captured data columns, CSV export; **failure reason** shown when status is failed
 - **VAPI real calls** — POST /call, lazy assistant + structured output per project, one phone number (env), usage limits (calls used/limit)
-- **Call results** — Transcript, recording, structured output (capturedData) via webhook or **sync-calls polling** (no ngrok)
+- **Call results** — Transcript, recording, structured output (capturedData) via webhook or **sync-calls polling** (no ngrok); **sync on project load** and **“Sync call status”** on Results; fallbacks for stuck “calling” (no vapiCallId, stale call, getCall null) with clearer failure reasons
 - **Usage** — Org usage (callsUsed/callsLimit), UsageWidget, 402 when over limit
 - **Team** — Invite, list, roles, resend (mock email)
 - **Settings** — Subscription, payment, invoices (mock)
+- **Projects list** — Tile layout with industry (not description), formatted date (e.g. Today · 31 Jan 2026), avatar placeholder for AI agent
 - **Demo data** — Pay-less org seeded; other orgs empty
 - **Architecture plan** — VAPI, Gemini, phone numbers documented
 
@@ -38,7 +41,7 @@ Real calling is implemented. Remaining for full production readiness:
 
 | # | Task | Description |
 |---|------|--------------|
-| 5 | **Email Sending** | Real email for team invitations. See [backlog/EMAIL_SENDING.md](./backlog/EMAIL_SENDING.md) |
+| 5 | **Email Sending** | Real email for team invitations. Can use **Nodemailer + SMTP** (e.g. Gmail app password, or any SMTP host) — no SendGrid/Resend required. See [backlog/EMAIL_SENDING.md](./backlog/EMAIL_SENDING.md). |
 | 6 | **Settings org scoping** | Settings API returns mock data without org validation. When wiring Stripe, scope by org. See [backlog/SETTINGS_ORG_SCOPING.md](./backlog/SETTINGS_ORG_SCOPING.md). |
 
 ---

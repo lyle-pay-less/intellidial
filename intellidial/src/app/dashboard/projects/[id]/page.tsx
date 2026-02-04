@@ -915,8 +915,8 @@ function QueueTab({
     timeout: ReturnType<typeof setTimeout>;
   } | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (options?: { skipLoading?: boolean }) => {
+    if (!options?.skipLoading) setLoading(true);
     try {
       const [contactsRes, queueRes] = await Promise.all([
         fetch(
@@ -968,33 +968,55 @@ function QueueTab({
         }
       }
     } finally {
-      setLoading(false);
+      if (!options?.skipLoading) setLoading(false);
     }
   }, [projectId, statusFilter, authHeaders]);
 
   const startSyncPolling = useCallback(() => {
+    // Clear any existing polling
+    if (syncPollRef.current) {
+      clearInterval(syncPollRef.current.interval);
+      clearTimeout(syncPollRef.current.timeout);
+      syncPollRef.current = null;
+    }
+
     const poll = async () => {
       try {
         const r = await fetch(`/api/projects/${projectId}/sync-calls`, {
           headers: authHeaders,
         });
-        if (r.ok) await fetchData();
+        if (r.ok) {
+          const data = await r.json();
+          // Stop polling if no calls were synced (all calls completed)
+          if (data.synced === 0) {
+            if (syncPollRef.current) {
+              clearInterval(syncPollRef.current.interval);
+              clearTimeout(syncPollRef.current.timeout);
+              syncPollRef.current = null;
+            }
+            return;
+          }
+          await fetchData({ skipLoading: true });
+        }
       } catch {
         // ignore
       }
     };
     poll();
-    const interval = setInterval(poll, 3000);
+    // Increased interval from 3s to 10s to reduce API load
+    const interval = setInterval(poll, 10000);
+    // Reduced timeout from 120s to 60s
     const timeout = setTimeout(() => {
       clearInterval(interval);
       syncPollRef.current = null;
-    }, 120000);
+    }, 60000);
     syncPollRef.current = { interval, timeout };
   }, [projectId, authHeaders, fetchData]);
 
   useEffect(() => {
     fetchData();
-  }, [fetchData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, statusFilter]);
 
   useEffect(() => {
     return () => {
@@ -1368,23 +1390,36 @@ function QueueTab({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {c.status === "pending" || c.status === "failed" ? (
+                    {c.status === "calling" ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Calling…
+                      </span>
+                    ) : (
                       <button
                         type="button"
                         onClick={() => handleCallNow(c.id)}
                         disabled={callingNowId !== null}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title={c.status === "failed" ? "Retry call" : "Call this contact only"}
+                        title={
+                          c.status === "failed"
+                            ? "Retry call"
+                            : c.status === "success"
+                              ? "Call this contact again"
+                              : "Call this contact only"
+                        }
                       >
                         {callingNowId === c.id ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                           <Phone className="h-3.5 w-3.5" />
                         )}
-                        {c.status === "failed" ? "Retry" : "Call now"}
+                        {c.status === "failed"
+                          ? "Retry"
+                          : c.status === "success"
+                            ? "Call again"
+                            : "Call now"}
                       </button>
-                    ) : (
-                      <span className="text-slate-400 text-xs">—</span>
                     )}
                   </td>
                 </tr>
