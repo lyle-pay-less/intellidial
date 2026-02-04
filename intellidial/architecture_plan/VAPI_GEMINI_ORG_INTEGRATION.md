@@ -395,7 +395,7 @@ This section addresses the **crunch** of the business: how calling works across 
 
 - **Calendar month:** `usagePeriodStart` = first day of month; reset usage at start of next month. Simple for users ("1,000 calls per month").
 - **Rolling 30 days:** Period start = signup or last reset; reset every 30 days. Requires storing last reset.
-- **Recommendation:** Start with calendar month; align with Stripe billing if we use it. Store `usagePeriodStart` (e.g. "2026-01-01") and derive period end from plan.
+- **Recommendation:** Start with calendar month; align with SA payment gateway billing period if we use it. Store `usagePeriodStart` (e.g. "2026-01-01") and derive period end from plan.
 
 ### Implementation notes (no code yet)
 
@@ -460,4 +460,4 @@ This section addresses the **crunch** of the business: how calling works across 
 5. **Phone numbers** — See "Open Questions (Phone Numbers)" in the Phone Numbers section.
 6. **Usage: increment on initiation vs. webhook** — If we increment `callsUsed` when we POST VAPI /call, we count attempts; if we only increment on webhook, we count completed/attempted calls that reached VAPI. Latter avoids charging for failed initiations; former gives immediate feedback. Decide and document.
 7. **Period reset** — Who resets `callsUsed`/`minutesUsed` at start of new billing period? Cron job, or on first request in new period when we detect `usagePeriodStart` is in the past?
-8. **Stripe alignment** — When we add billing, align usage period with Stripe subscription period (e.g. current period start/end from Stripe) so limits and billing match.
+8. **Payment gateway alignment** — When we add billing, align usage period with SA payment gateway subscription period (e.g. PayFast/PayGate) so limits and billing match.

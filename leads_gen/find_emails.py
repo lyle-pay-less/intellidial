@@ -129,6 +129,10 @@ def main():
             if not email:
                 continue
             verification = hunter_verify_email(email)
+            # ZERO BOUNCE RULE: Only keep valid or catch_all emails
+            if verification not in ("valid", "catch_all"):
+                print(f"  -> SKIPPED {email} | {position} | {verification} (will bounce)")
+                continue
             results.append({
                 "segment": segment,
                 "company_name": company_name,
@@ -138,7 +142,7 @@ def main():
                 "email": email,
                 "verification_status": verification,
             })
-            print(f"  -> {email} | {position} | {verification}")
+            print(f"  -> ✅ {email} | {position} | {verification}")
 
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -148,7 +152,12 @@ def main():
         writer.writeheader()
         writer.writerows(results)
 
-    print(f"\nWrote {len(results)} contacts to {OUTPUT_CSV}")
+    valid_count = sum(1 for r in results if r.get("verification_status") == "valid")
+    catch_all_count = sum(1 for r in results if r.get("verification_status") == "catch_all")
+    print(f"\n✅ Wrote {len(results)} verified contacts to {OUTPUT_CSV}")
+    print(f"   - {valid_count} valid emails")
+    print(f"   - {catch_all_count} catch_all emails (use with caution)")
+    print(f"\n⚠️  ZERO BOUNCE RULE: Only valid/catch_all emails included. Invalid emails were filtered out.")
 
 
 if __name__ == "__main__":

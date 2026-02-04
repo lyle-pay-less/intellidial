@@ -1,0 +1,69 @@
+# Google Cloud Build configuration for Intellidial
+# This builds and deploys your Next.js app to Cloud Run (London region)
+
+steps:
+  # Step 1: Build Docker image (includes npm build)
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/intellidial:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/intellidial:latest'
+      - '-f'
+      - 'Intellidial/Dockerfile'
+      - 'Intellidial'
+
+  # Step 2: Push Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/intellidial:$COMMIT_SHA'
+
+  # Step 3: Deploy to Cloud Run (London region) with secrets
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'intellidial'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/intellidial:$COMMIT_SHA'
+      - '--region'
+      - 'europe-west2'  # London
+      - '--platform'
+      - 'managed'
+      - '--service-account'
+      - 'cloud-run-intellidial@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-secrets'
+      - 'VAPI_API_KEY=vapi-api-key:latest,VAPI_PUBLIC_KEY=vapi-public-key:latest,VAPI_DEMO_ASSISTANT_ID=vapi-demo-assistant-id:latest,GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_PLACES_API_KEY=google-places-api-key:latest,VAPI_PHONE_NUMBER_ID=vapi-phone-number-id:latest,NEXT_PUBLIC_FIREBASE_API_KEY=next-public-firebase-api-key:latest,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=next-public-firebase-auth-domain:latest,NEXT_PUBLIC_FIREBASE_PROJECT_ID=next-public-firebase-project-id:latest,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=next-public-firebase-storage-bucket:latest,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=next-public-firebase-messaging-sender-id:latest,NEXT_PUBLIC_FIREBASE_APP_ID=next-public-firebase-app-id:latest'
+      - '--allow-unauthenticated'
+      - '--port'
+      - '3000'
+      - '--memory'
+      - '512Mi'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '300'
+      - '--max-instances'
+      - '10'
+      - '--min-instances'
+      - '0'
+
+# Options
+options:
+  machineType: 'E2_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+# Substitutions (not needed - all vars are in Secret Manager now)
+# NEXT_PUBLIC_ vars are stored in Secret Manager and mapped via --set-secrets
+substitutions: {}
+
+# Timeout (30 minutes)
+timeout: '1800s'
+
+# Images to store
+images:
+  - 'gcr.io/$PROJECT_ID/intellidial:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/intellidial:latest'

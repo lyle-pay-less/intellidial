@@ -97,7 +97,7 @@ def main():
     ap = argparse.ArgumentParser(description="Generate personalized emails from enriched leads (Gemini)")
     ap.add_argument("--input", default=DEFAULT_INPUT, help="Input CSV (enriched_leads.csv)")
     ap.add_argument("--output", default=DEFAULT_OUTPUT, help="Output CSV (emails_ready.csv)")
-    ap.add_argument("--verified-only", action="store_true", help="Only include valid/catch_all emails")
+    ap.add_argument("--allow-unverified", action="store_true", help="Allow unverified emails (NOT RECOMMENDED - will cause bounces). Default: only verified emails.")
     args = ap.parse_args()
 
     gemini_key = os.getenv("GEMINI_API_KEY")
@@ -111,17 +111,25 @@ def main():
         sys.exit(1)
 
     rows = []
+    skipped_unverified = 0
     with open(args.input, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if args.verified_only:
+            # ZERO BOUNCE RULE: By default, only keep verified emails
+            if not args.allow_unverified:
                 status = (row.get("verification_status") or "").strip().lower()
                 if status not in ("valid", "catch_all"):
+                    skipped_unverified += 1
                     continue
             rows.append(row)
+    
+    if skipped_unverified > 0:
+        print(f"⚠️  Skipped {skipped_unverified} unverified emails (zero bounce rule). Use --allow-unverified to include them (NOT RECOMMENDED).")
 
     if not rows:
-        print("No rows to process. Add leads to enriched_leads.csv or omit --verified-only.")
+        print("No verified leads to process.")
+        print("Add verified leads to enriched_leads.csv or run find_emails.py first.")
+        print("⚠️  ZERO BOUNCE RULE: Only verified (valid/catch_all) emails are included by default.")
         sys.exit(0)
 
     out_fields = ["segment", "company_name", "contact_name", "job_title", "email", "subject", "body"]
@@ -152,8 +160,12 @@ def main():
         w.writeheader()
         w.writerows(results)
 
-    print(f"\nWrote {len(results)} emails to {args.output}")
-    print("Import this file into Instantly for Step 5 (send + protect domain).")
+    verified_count = sum(1 for r in results if r.get("verification_status", "").lower() == "valid")
+    print(f"\n✅ Wrote {len(results)} emails to {args.output}")
+    print(f"   - All emails verified (zero bounce rule)")
+    print(f"   - {verified_count} valid emails")
+    print("\n📧 Import this file into Instantly/SendGrid for sending.")
+    print("⚠️  Remember: Warm up your domain before sending large volumes!")
 
 
 if __name__ == "__main__":

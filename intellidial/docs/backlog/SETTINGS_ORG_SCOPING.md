@@ -6,7 +6,7 @@
 - ✅ Settings page UI (subscription, payment method, invoices)
 - ✅ Mock data returned
 - ❌ **Settings API does not validate org; returns same mock for all**
-- ❌ **No real Stripe/Firestore integration**
+- ❌ **No real SA payment gateway (PayFast/PayGate) + Firestore integration**
 
 ### Task: Scope Settings by Org
 
@@ -16,7 +16,7 @@
 1. Add `x-user-id` header requirement to settings API
 2. Get orgId via `getUserOrganization(userId)`
 3. Filter/query subscription, payment, invoices by orgId
-4. When wiring real data (Stripe, Firestore):
+4. When wiring real data (SA payment gateway + Firestore):
    - [ ] Store subscription per org
    - [ ] Store payment method per org
    - [ ] Store invoices per org

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  // Mock data — replace with Stripe/Firestore when wired
+  // Mock data — replace with SA payment gateway (PayFast/PayGate) + Firestore when wired
   const subscription = {
     plan: "starter" as const,
     planLabel: "Starter",

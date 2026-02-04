@@ -24,7 +24,7 @@ This folder contains tasks and features that are planned but not yet implemented
 4. **Phone Numbers** — Per-org caller ID (required before real calls)
 5. **VAPI Calls & Webhooks** — Real calls and call result handling
 6. **Email Sending** — Team invitations (standalone)
-7. **Settings Org Scoping** — When wiring real Stripe/billing
+7. **Settings Org Scoping** — When wiring real SA payment gateway (PayFast/PayGate) + billing
 
 ---
 

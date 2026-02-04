@@ -3,6 +3,8 @@
 **Goal:** Acquire 50 paying customers within 6-12 months
 **Target:** High-volume outbound call companies (lead gen, telemarketing, market research)
 
+> **⚠️ Demo Burden Concern:** This plan assumes 300 demos → 50 customers. See **`REDUCE_DEMO_BURDEN_STRATEGY.md`** for strategies to reduce demos by 60-70% (300 → 100 demos) using self-serve trials, pre-recorded videos, and better qualification.
+
 ---
 
 ## Revenue Projections

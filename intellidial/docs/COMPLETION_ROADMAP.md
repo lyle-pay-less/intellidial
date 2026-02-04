@@ -42,7 +42,7 @@ Real calling is implemented. Remaining for full production readiness:
 | # | Task | Description |
 |---|------|--------------|
 | 5 | **Email Sending** | Real email for team invitations. Can use **Nodemailer + SMTP** (e.g. Gmail app password, or any SMTP host) — no SendGrid/Resend required. See [backlog/EMAIL_SENDING.md](./backlog/EMAIL_SENDING.md). |
-| 6 | **Settings org scoping** | Settings API returns mock data without org validation. When wiring Stripe, scope by org. See [backlog/SETTINGS_ORG_SCOPING.md](./backlog/SETTINGS_ORG_SCOPING.md). |
+| 6 | **Settings org scoping** | Settings API returns mock data without org validation. When wiring South African payment gateway (PayFast/PayGate), scope by org. See [backlog/SETTINGS_ORG_SCOPING.md](./backlog/SETTINGS_ORG_SCOPING.md). |
 
 ---
 
@@ -64,7 +64,7 @@ Real calling is implemented. Remaining for full production readiness:
 
 | # | Task | Description |
 |---|------|--------------|
-| 14 | **Real billing (Stripe)** | Replace mock subscription/invoices with Stripe. Tie usage (calls used) to plans. |
+| 14 | **Real billing (SA payment gateway)** | Replace mock subscription/invoices with South African payment gateway (PayFast/PayGate). Tie usage (calls used) to plans. |
 | 15 | **Call consent / TCPA** | Ensure contacts have consented to be called. Document compliance. See architecture doc notes on TCPA. |
 | 16 | **Inbound calls** | If orgs want to receive calls on their number, VAPI supports `assistantId` on the phone number. |
 | 17 | **Twilio BYON** | Bring Your Own Number for international (e.g. SA +27). See architecture plan Phone Numbers section. |
@@ -80,7 +80,7 @@ Before going live:
 - [ ] Resolve `npm run build` errors
 - [ ] Set production env vars (Firebase, VAPI, Gemini, email)
 - [ ] Configure Firebase Auth allowed domains
-- [ ] Deploy to Vercel (or chosen host)
+- [ ] Deploy to GCP Cloud Run (or App Engine) — keeps Firebase/Firestore in same ecosystem
 - [ ] Set up custom domain
 - [ ] Verify Firestore security rules (if using client SDK)
 - [ ] SSL / HTTPS verified
@@ -93,6 +93,6 @@ Before going live:
 1. **E2E validation** — One real call; confirm transcript, recording, capturedData in table (polling works without ngrok)
 2. **Build fix** — Required for deployment (`npm run build`)
 3. **Email Sending** — Team invitations (real email)
-4. **Settings org scoping** — When adding real billing (Stripe)
-5. **Deployment** — Set prod env vars, deploy (e.g. Vercel)
+4. **Settings org scoping** — When adding real billing (SA payment gateway)
+5. **Deployment** — Set prod env vars, deploy to GCP Cloud Run (or App Engine)
 6. **Polish** — Error handling, loading states, optional webhook signing
