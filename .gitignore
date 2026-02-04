@@ -2,9 +2,10 @@
 .env.local
 .env.*
 *.json
-# Allow intellidial app package files (required for npm ci in Docker build)
+# Allow intellidial app package and config files (required for Docker build)
 !intellidial/package.json
 !intellidial/package-lock.json
+!intellidial/tsconfig.json
 phone_list.txt
 __pycache__/
 *.pyc
