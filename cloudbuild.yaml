@@ -2,8 +2,9 @@
 # This builds and deploys your Next.js app to Cloud Run (London region)
 
 steps:
-  # Step 1: Build Docker image (includes npm build)
+  # Step 1: Build Docker image (run from app dir so paths are correct)
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'intellidial'
     args:
       - 'build'
       - '-t'
@@ -11,8 +12,8 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/intellidial:latest'
       - '-f'
-      - 'intellidial/Dockerfile'
-      - 'intellidial'
+      - 'Dockerfile'
+      - '.'
 
   # Step 2: Push Docker image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
