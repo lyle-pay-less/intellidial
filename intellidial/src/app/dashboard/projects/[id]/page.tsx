@@ -70,8 +70,8 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const params = useParams();
   const id = params?.id as string;
-  const authHeaders = useMemo(
-    () => (user?.uid ? { "x-user-id": user.uid } : {}),
+  const authHeaders = useMemo<Record<string, string>>(
+    () => (user?.uid ? { "x-user-id": user.uid } : {}) as Record<string, string>,
     [user?.uid]
   );
   const [project, setProject] = useState<ProjectWithId | null>(null);
@@ -282,6 +282,7 @@ export default function ProjectDetailPage() {
           projectId={id}
           total={totalContacts}
           failedCount={contacts.filter((c) => c.status === "failed").length}
+          authHeaders={authHeaders}
         />
       )}
     </div>
@@ -911,8 +912,8 @@ function QueueTab({
   const [updating, setUpdating] = useState(false);
   const [callError, setCallError] = useState<string | null>(null);
   const syncPollRef = useRef<{
-    interval: ReturnType<typeof setInterval>;
-    timeout: ReturnType<typeof setTimeout>;
+    interval: number;
+    timeout: number;
   } | null>(null);
 
   const fetchData = useCallback(async (options?: { skipLoading?: boolean }) => {
@@ -975,8 +976,8 @@ function QueueTab({
   const startSyncPolling = useCallback(() => {
     // Clear any existing polling
     if (syncPollRef.current) {
-      clearInterval(syncPollRef.current.interval);
-      clearTimeout(syncPollRef.current.timeout);
+      window.clearInterval(syncPollRef.current.interval);
+      window.clearTimeout(syncPollRef.current.timeout);
       syncPollRef.current = null;
     }
 
@@ -990,8 +991,8 @@ function QueueTab({
           // Stop polling if no calls were synced (all calls completed)
           if (data.synced === 0) {
             if (syncPollRef.current) {
-              clearInterval(syncPollRef.current.interval);
-              clearTimeout(syncPollRef.current.timeout);
+              window.clearInterval(syncPollRef.current.interval);
+              window.clearTimeout(syncPollRef.current.timeout);
               syncPollRef.current = null;
             }
             return;
@@ -1004,10 +1005,10 @@ function QueueTab({
     };
     poll();
     // Increased interval from 3s to 10s to reduce API load
-    const interval = setInterval(poll, 10000);
+    const interval = window.setInterval(poll, 10000);
     // Reduced timeout from 120s to 60s
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
+    const timeout = window.setTimeout(() => {
+      window.clearInterval(interval);
       syncPollRef.current = null;
     }, 60000);
     syncPollRef.current = { interval, timeout };
@@ -1021,8 +1022,8 @@ function QueueTab({
   useEffect(() => {
     return () => {
       if (syncPollRef.current) {
-        clearInterval(syncPollRef.current.interval);
-        clearTimeout(syncPollRef.current.timeout);
+        window.clearInterval(syncPollRef.current.interval);
+        window.clearTimeout(syncPollRef.current.timeout);
       }
     };
   }, []);
@@ -1622,12 +1623,12 @@ function InstructionsTab({
       setShowSuccess(true);
       
       // Wait for success animation, then scroll to top
-      setTimeout(() => {
+      window.setTimeout(() => {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }, 600);
       
       // Hide success banner after 3.5s
-      setTimeout(() => {
+      window.setTimeout(() => {
         setShowSuccess(false);
       }, 3500);
     } catch (err) {
@@ -2419,12 +2420,14 @@ function ExportTab({
   projectId,
   total,
   failedCount,
+  authHeaders,
 }: {
   contacts: ContactWithId[];
   project: ProjectWithId;
   projectId: string;
   total: number;
   failedCount: number;
+  authHeaders: Record<string, string>;
 }) {
   const [exporting, setExporting] = useState(false);
   const [exportingFailed, setExportingFailed] = useState(false);

@@ -41,7 +41,7 @@ export async function POST(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  const body = await req.json();
+  const body = (await req.json()) as Record<string, unknown>;
   const items = body?.contacts as Array<{ phone: string; name?: string }>;
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(

@@ -97,11 +97,13 @@ function buildSystemPrompt(project: ProjectForVapi): string {
   const parts: string[] = [];
   const instructions = (project.agentInstructions ?? "").trim();
   if (instructions) parts.push(instructions);
-  if ((project.goal ?? "").trim()) {
-    parts.push(`\nGOAL: ${project.goal.trim()}`);
+  const goal = typeof project.goal === 'string' ? project.goal.trim() : "";
+  if (goal) {
+    parts.push(`\nGOAL: ${goal}`);
   }
-  if ((project.tone ?? "").trim()) {
-    parts.push(`\nTONE: ${project.tone.trim()}`);
+  const tone = typeof project.tone === 'string' ? project.tone.trim() : "";
+  if (tone) {
+    parts.push(`\nTONE: ${tone}`);
   }
   const questions = (project.agentQuestions ?? []).filter((q) => (q as AgentQuestion).text?.trim());
   if (questions.length > 0) {

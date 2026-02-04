@@ -38,7 +38,7 @@ export async function PATCH(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  const body = await req.json();
+  const body = (await req.json()) as Record<string, unknown>;
   const contactIds = body?.contactIds as string[] | undefined;
   const add = body?.add !== false;
   if (!Array.isArray(contactIds)) {

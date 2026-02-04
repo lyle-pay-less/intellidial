@@ -87,7 +87,7 @@ function FadeInOnScroll({ children, className = "", delay = 0 }: { children: Rea
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setTimeout(() => setIsVisible(true), delay);
+          window.setTimeout(() => setIsVisible(true), delay);
         }
       },
       { threshold: 0.1 }

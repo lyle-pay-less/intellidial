@@ -26,7 +26,7 @@
 | 11 | ☑ | Keep Local Development Working - **COMPLETE** |
 | 12 | ☑ | Update .gitignore - **COMPLETE** |
 | 13 | ☐ | Connect Cloud Build Trigger |
-| 14 | ☐ | Test Deployment |
+| 14 | ☑ | Test Deployment - **IN PROGRESS** (code pushed, monitoring build) |
 | 15 | ☐ | Verify Deployment |
 | 16 | ☐ | Set Up Custom Domain (Optional) |
 | 17 | ☐ | Monitor and Optimize |
@@ -350,14 +350,20 @@ steps:
 
 ### Step 14: Test Deployment
 
-☐ **Step 14: Test Deployment**
+☑ **Step 14: Test Deployment** - **IN PROGRESS**
 
-☐ Make a small change to your code
-☐ Commit and push:
-  ```bash
-  git add .
-  git commit -m "Test Cloud Build deployment"
-  git push origin main
+☑ Code committed and pushed to GitHub - **DONE**
+☑ Cloud Build triggered successfully - **DONE**
+☐ Monitor Cloud Build progress - **IN PROGRESS** (Build ID: `e2c7d9ae`)
+☐ Verify deployment succeeds
+☐ Check Cloud Run service is created
+☐ Test the deployed application
+
+**Build Details:**
+- Build ID: `e2c7d9ae`
+- Trigger: `deploy-intellidial`
+- Commit: `cd53d69`
+- Status: Building (monitor in [Cloud Build History](https://console.cloud.google.com/cloud-build/builds))
   ```
 ☐ Go to [Cloud Build History](https://console.cloud.google.com/cloud-build/builds)
 ☐ Watch the build (should start automatically)

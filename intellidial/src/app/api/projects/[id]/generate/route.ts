@@ -146,13 +146,14 @@ export async function POST(
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
-    let body: unknown;
+    let body: Record<string, unknown>;
     try {
-      body = await req.json();
+      const parsed = await req.json();
+      body = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
     } catch {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { type, industry, questions: bodyQuestions } = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const { type, industry, questions: bodyQuestions } = body;
     const industryStr = typeof industry === "string" ? industry.trim() : "";
     const label = industryLabel(industryStr || "other");
 
@@ -184,7 +185,8 @@ Write a single clear goal (1-3 sentences) for what the agent aims to achieve on 
 
   // —— Questions: Gemini generates from industry (and optional goal); fallback mock
   if (type === "questions") {
-    const count = Math.min(10, Math.max(1, parseInt(body?.count ?? "5", 10)));
+    const countStr = typeof body?.count === 'string' || typeof body?.count === 'number' ? String(body.count) : "5";
+    const count = Math.min(10, Math.max(1, parseInt(countStr, 10)));
     const existing = (body?.existing ?? []) as string[];
     const existingSet = new Set(existing.map((t: string) => t.toLowerCase().trim()));
     const goalHint = body?.goal ? ` Goal: ${(body.goal as string).slice(0, 200)}.` : "";
@@ -261,8 +263,8 @@ Generate exactly ${count} specific questions the agent will ask during the call.
 
   // —— Script: one coherent prompt from tone + goal + questions (Gemini combines; else we build one)
   if (type === "script") {
-    const tone = (body?.tone ?? "").trim();
-    const goal = (body?.goal ?? "").trim();
+    const tone = (typeof body?.tone === 'string' ? body.tone : "").trim();
+    const goal = (typeof body?.goal === 'string' ? body.goal : "").trim();
     const qList = (body?.questions ?? []) as string[];
     const questionLines = qList.filter((q) => typeof q === "string" && q.trim()).map((q) => q.trim());
 

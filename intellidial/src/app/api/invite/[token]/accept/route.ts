@@ -7,10 +7,10 @@ import { acceptInvitation } from "@/lib/data/store";
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
   try {
-    const { token } = params;
+    const { token } = await params;
     const { userId } = await req.json();
 
     if (!userId) {

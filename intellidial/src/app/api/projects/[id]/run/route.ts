@@ -18,7 +18,7 @@ export async function POST(
 
   let contactIds: string[] | undefined;
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     if (Array.isArray(body?.contactIds) && body.contactIds.length > 0) {
       contactIds = body.contactIds;
     }

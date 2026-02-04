@@ -69,7 +69,7 @@ export function VoiceDemo() {
       }
 
       const vapi = new Vapi(publicKey);
-      let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+      let connectionTimeoutId: number | null = null;
 
       const clearConnectionTimeout = () => {
         if (connectionTimeoutId != null) {
@@ -94,7 +94,9 @@ export function VoiceDemo() {
       });
       vapi.on("message", (message: { type?: string; role?: string; transcript?: string }) => {
         if (message.type === "transcript" && message.role && message.transcript) {
-          setTranscript((prev) => [...prev, { role: message.role, text: message.transcript }]);
+          const role = message.role;
+          const transcript = message.transcript;
+          setTranscript((prev) => [...prev, { role, text: transcript }]);
         }
       });
       vapi.on("error", (e: unknown) => {
@@ -150,10 +152,10 @@ export function VoiceDemo() {
   // Rotate connecting messages every 2.5s while connecting
   useEffect(() => {
     if (!connecting) return;
-    const id = setInterval(() => {
+    const id = window.setInterval(() => {
       setConnectingMessageIndex((prev) => (prev + 1) % CONNECTING_MESSAGES.length);
     }, 2500);
-    return () => clearInterval(id);
+    return () => window.clearInterval(id);
   }, [connecting]);
 
   const vol = callActive ? volumeLevel : 0;

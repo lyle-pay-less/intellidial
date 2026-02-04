@@ -6,7 +6,7 @@
  * Falls back to in-memory storage if Firebase is not available.
  */
 
-import type { ProjectDoc, ContactDoc, OrganizationDoc } from "@/lib/firebase/types";
+import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS } from "@/lib/firebase/types";
@@ -904,7 +904,7 @@ const MOCK_TRANSCRIPTS = [
 
 function generateMockCallResult(
   status: "success" | "failed",
-  captureFields?: { key: string }[]
+  captureFields?: CaptureField[]
 ): ContactDoc["callResult"] {
   const attemptedAt = now();
   if (status === "failed") {

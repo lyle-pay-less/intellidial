@@ -44,12 +44,15 @@ const MOCK_DEV_USER = {
   providerData: [],
   refreshToken: "",
   tenantId: null,
+  phoneNumber: null,
+  photoURL: null,
+  providerId: "password",
   delete: async () => {},
   getIdToken: async () => "",
   getIdTokenResult: async () => ({}),
   reload: async () => {},
   toJSON: () => ({}),
-} as User;
+} as unknown as User;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);

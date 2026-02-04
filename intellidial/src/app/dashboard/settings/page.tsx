@@ -99,7 +99,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         setDownloadMessage("Invoice download will be available when billing is connected.");
-        setTimeout(() => setDownloadMessage(null), 4000);
+        window.setTimeout(() => setDownloadMessage(null), 4000);
       }
     } finally {
       setDownloadingId(null);

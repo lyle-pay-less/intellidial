@@ -11,7 +11,7 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/intellidial:latest'
       - '-f'
-      - 'Intellidial/Dockerfile'
+      - 'Dockerfile'
       - 'Intellidial'
 
   # Step 2: Push Docker image to Container Registry

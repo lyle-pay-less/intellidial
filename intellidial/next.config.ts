@@ -18,7 +18,6 @@ if (fs.existsSync(envPath)) {
 }
 
 const nextConfig: NextConfig = {
-  reactCompiler: true,
   // Keep module resolution in this package (fixes "resolve tailwindcss in C:\code\doctor")
   serverExternalPackages: [],
   // Enable standalone output for Docker

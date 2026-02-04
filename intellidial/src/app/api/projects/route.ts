@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (!orgId) {
     return NextResponse.json({ error: "Not part of an organization" }, { status: 403 });
   }
-  const body = await req.json();
+  const body = (await req.json()) as Record<string, unknown>;
   const name = body?.name as string;
   if (!name || typeof name !== "string") {
     return NextResponse.json(
@@ -32,9 +32,10 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  const description = typeof body?.description === 'string' ? body.description.trim() : undefined;
   const project = await createProject({
     name: name.trim(),
-    description: body?.description?.trim() || undefined,
+    description,
     orgId,
   });
   return NextResponse.json(project);

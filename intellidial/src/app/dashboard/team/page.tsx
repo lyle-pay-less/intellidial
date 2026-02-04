@@ -189,7 +189,7 @@ export default function TeamPage() {
         headers: { "x-user-id": user.uid },
       });
       setSuccess("Invite resent");
-      setTimeout(() => setSuccess(null), 2000);
+      window.setTimeout(() => setSuccess(null), 2000);
     } catch (err) {
       console.error("Failed to resend invite", err);
     }
