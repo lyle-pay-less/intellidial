@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   webpack: (config, { isServer }) => {
     config.resolve.modules = [path.join(__dirname, "node_modules"), "node_modules"];
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      "@": path.join(__dirname, "src"),
+    };
     return config;
   },
 };
