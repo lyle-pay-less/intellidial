@@ -31,21 +31,29 @@ export async function PATCH(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  const body = await req.json();
-  const updated = await updateProject(id, {
-    name: body?.name,
-    description: body?.description,
-    industry: body?.industry,
-    tone: body?.tone,
-    goal: body?.goal,
-    agentQuestions: body?.agentQuestions,
-    captureFields: body?.captureFields,
-    agentInstructions: body?.agentInstructions,
-    status: body?.status,
-    notifyOnComplete: body?.notifyOnComplete,
-    surveyEnabled: body?.surveyEnabled,
-    callWindowStart: body?.callWindowStart,
-    callWindowEnd: body?.callWindowEnd,
-  });
-  return NextResponse.json(updated);
+  const body = (await req.json()) as Record<string, unknown> | null;
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+  }
+  // Only pass defined fields so we don't overwrite with undefined in Firestore
+  const updates: Record<string, unknown> = {};
+  const keys = [
+    "name", "description", "industry", "tone", "goal", "agentQuestions",
+    "captureFields", "agentInstructions", "status", "notifyOnComplete",
+    "surveyEnabled", "callWindowStart", "callWindowEnd",
+  ] as const;
+  for (const key of keys) {
+    if (body[key] !== undefined) updates[key] = body[key];
+  }
+  try {
+    const updated = await updateProject(id, updates as Parameters<typeof updateProject>[1]);
+    if (!updated) {
+      return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+    return NextResponse.json(updated);
+  } catch (e) {
+    console.error("[API] PATCH /api/projects/[id] updateProject failed:", e);
+    const message = e instanceof Error ? e.message : "Failed to save project";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

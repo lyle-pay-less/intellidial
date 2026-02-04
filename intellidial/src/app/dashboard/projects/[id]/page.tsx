@@ -107,15 +107,30 @@ export default function ProjectDetailPage() {
     [id, authHeaders]
   );
 
+  /** Run sync-calls once (fixes contacts stuck "calling") then refetch contacts. Call on project load and from Results tab. */
+  const syncCallsThenRefresh = useCallback(async () => {
+    if (!id || !user?.uid) return;
+    try {
+      const syncRes = await fetch(`/api/projects/${id}/sync-calls`, {
+        headers: authHeaders,
+      });
+      if (syncRes.ok) await fetchContacts(0);
+    } catch {
+      // ignore
+    }
+  }, [id, authHeaders, fetchContacts]);
+
   useEffect(() => {
     if (!id) {
       setLoading(false);
       return;
     }
-    Promise.all([fetchProject(), fetchContacts()]).finally(() =>
-      setLoading(false)
-    );
-  }, [id, fetchProject, fetchContacts, authHeaders]);
+    (async () => {
+      await fetchProject();
+      await fetchContacts();
+      await syncCallsThenRefresh();
+    })().finally(() => setLoading(false));
+  }, [id, fetchProject, fetchContacts, syncCallsThenRefresh]);
 
   const refreshContacts = () => fetchContacts(0);
 
@@ -254,7 +269,11 @@ export default function ProjectDetailPage() {
         <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} />
       )}
       {activeTab === "results" && (
-        <ResultsTab contacts={contacts} project={project} />
+        <ResultsTab
+          contacts={contacts}
+          project={project}
+          onSyncCalls={syncCallsThenRefresh}
+        />
       )}
       {activeTab === "export" && (
         <ExportTab
@@ -896,6 +915,63 @@ function QueueTab({
     timeout: ReturnType<typeof setTimeout>;
   } | null>(null);
 
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [contactsRes, queueRes] = await Promise.all([
+        fetch(
+          `/api/projects/${projectId}/contacts?limit=200&status=${statusFilter}`,
+          { headers: authHeaders }
+        ),
+        fetch(`/api/projects/${projectId}/queue`, { headers: authHeaders }),
+      ]);
+      const contactsList: Array<{ id: string; status: string; vapiCallId?: string | null }> = [];
+      if (contactsRes.ok) {
+        const data = await contactsRes.json();
+        const list = data.contacts ?? [];
+        contactsList.push(...list);
+        setContacts(list);
+        setTotal(data.total ?? 0);
+      }
+      if (queueRes.ok) {
+        const data = await queueRes.json();
+        setQueueIds(new Set(data.contactIds ?? []));
+      }
+      // If any contact is stuck in "calling" (e.g. user left before sync), run sync once and refetch once
+      const hasStuckCalling = contactsList.some(
+        (c) => c.status === "calling" && c.vapiCallId?.trim()
+      );
+      if (hasStuckCalling) {
+        try {
+          const r = await fetch(`/api/projects/${projectId}/sync-calls`, {
+            headers: authHeaders,
+          });
+          if (r.ok) {
+            const [c2, q2] = await Promise.all([
+              fetch(`/api/projects/${projectId}/contacts?limit=200&status=${statusFilter}`, {
+                headers: authHeaders,
+              }),
+              fetch(`/api/projects/${projectId}/queue`, { headers: authHeaders }),
+            ]);
+            if (c2.ok) {
+              const d = await c2.json();
+              setContacts(d.contacts ?? []);
+              setTotal(d.total ?? 0);
+            }
+            if (q2.ok) {
+              const d = await q2.json();
+              setQueueIds(new Set(d.contactIds ?? []));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, statusFilter, authHeaders]);
+
   const startSyncPolling = useCallback(() => {
     const poll = async () => {
       try {
@@ -917,6 +993,10 @@ function QueueTab({
   }, [projectId, authHeaders, fetchData]);
 
   useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
     return () => {
       if (syncPollRef.current) {
         clearInterval(syncPollRef.current.interval);
@@ -924,34 +1004,6 @@ function QueueTab({
       }
     };
   }, []);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [contactsRes, queueRes] = await Promise.all([
-        fetch(
-          `/api/projects/${projectId}/contacts?limit=200&status=${statusFilter}`,
-          { headers: authHeaders }
-        ),
-        fetch(`/api/projects/${projectId}/queue`, { headers: authHeaders }),
-      ]);
-      if (contactsRes.ok) {
-        const data = await contactsRes.json();
-        setContacts(data.contacts ?? []);
-        setTotal(data.total ?? 0);
-      }
-      if (queueRes.ok) {
-        const data = await queueRes.json();
-        setQueueIds(new Set(data.contactIds ?? []));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, statusFilter, authHeaders]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   useEffect(() => {
     setCallWindowStart(project.callWindowStart ?? "09:00");
@@ -1078,6 +1130,7 @@ function QueueTab({
       });
       if (res.ok) {
         await fetchData();
+        startSyncPolling();
         return;
       }
       const data = await res.json().catch(() => ({}));
@@ -2060,14 +2113,17 @@ function InstructionsTab({
 function ResultsTab({
   contacts,
   project,
+  onSyncCalls,
 }: {
   contacts: ContactWithId[];
   project: ProjectWithId;
+  onSyncCalls?: () => Promise<void>;
 }) {
   const [transcriptIndex, setTranscriptIndex] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [syncing, setSyncing] = useState(false);
   const selectedContact =
     transcriptIndex !== null ? contacts[transcriptIndex] : null;
 
@@ -2115,6 +2171,23 @@ function ResultsTab({
         <span className="text-xs text-slate-500">
           {filteredContacts.length} of {contacts.length} shown
         </span>
+        {onSyncCalls && (
+          <button
+            type="button"
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                await onSyncCalls();
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing}
+            className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+          >
+            {syncing ? "Syncing…" : "Sync call status"}
+          </button>
+        )}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
@@ -2155,17 +2228,27 @@ function ResultsTab({
                   )}
                 </td>
                 <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs ${
-                      c.status === "success"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : c.status === "failed"
-                          ? "bg-red-100 text-red-700"
-                          : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {c.status}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    <span
+                      className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs ${
+                        c.status === "success"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : c.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {c.status}
+                    </span>
+                    {c.status === "failed" && c.callResult?.failureReason && (
+                      <span
+                        className="max-w-[220px] text-xs text-slate-500"
+                        title={c.callResult.failureReason}
+                      >
+                        {c.callResult.failureReason}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-slate-600">
                   {c.callResult?.durationSeconds

@@ -24,7 +24,7 @@ export async function GET(
   const status = searchParams.get("status") as "all" | "pending" | "success" | "failed" | "calling" | null;
   const statusFilter = status && ["all", "pending", "success", "failed", "calling"].includes(status) ? status : undefined;
 
-  const { contacts: contactList, total } = listContacts(id, { limit, offset, status: statusFilter });
+  const { contacts: contactList, total } = await listContacts(id, { limit, offset, status: statusFilter });
   return NextResponse.json({ contacts: contactList, total, limit, offset });
 }
 
@@ -50,6 +50,6 @@ export async function POST(
     );
   }
 
-  const created = createContacts(id, items);
+  const created = await createContacts(id, items);
   return NextResponse.json({ created: created.length, contacts: created });
 }

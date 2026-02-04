@@ -29,6 +29,8 @@ import {
   CheckCircle2,
   Wallet,
   CalendarCheck,
+  Server,
+  ShieldCheck,
 } from "lucide-react";
 
 // Animated counter hook
@@ -607,61 +609,85 @@ export default function LandingPage() {
             </div>
           </FadeInOnScroll>
 
-          <div className="grid md:grid-cols-3 gap-6 md:gap-8 max-w-5xl mx-auto">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-6 max-w-6xl mx-auto">
             {[
               {
                 name: "Starter",
                 price: "R999",
+                priceCustom: false,
                 popular: false,
                 trial: true,
                 features: ["100 calls per month", "1 project", "Excel export", "Call recordings", "Email support"],
                 cta: "Start free trial",
                 ctaStyle: "secondary",
+                ctaHref: "/login",
               },
               {
                 name: "Growth",
                 price: "R2,999",
+                priceCustom: false,
                 popular: true,
                 trial: true,
                 features: ["300 calls per month", "3 projects", "List generation included", "Excel export", "Call recordings", "Priority support"],
                 cta: "Start free trial",
                 ctaStyle: "primary",
+                ctaHref: "/login",
               },
               {
                 name: "Pro",
                 price: "R8,999",
+                priceCustom: false,
                 popular: false,
                 trial: true,
                 features: ["1,000 calls per month", "Unlimited projects", "List generation included", "Excel + API export", "Dedicated manager", "Custom AI voice"],
-                cta: "Contact Us",
+                cta: "Start free trial",
                 ctaStyle: "secondary",
+                ctaHref: "/login",
+              },
+              {
+                name: "Enterprise",
+                price: "Contact for pricing",
+                priceCustom: true,
+                popular: false,
+                trial: false,
+                features: ["Custom call volume", "Unlimited projects", "Dedicated success manager", "SLA & custom integrations", "Compliance & on-premise options"],
+                cta: "Contact us",
+                ctaStyle: "secondary",
+                ctaHref: "#contact",
               },
             ].map((plan, i) => (
               <FadeInOnScroll key={i} delay={i * 100}>
-                <div className={`relative bg-white rounded-2xl p-8 border-2 transition-all duration-300 hover:shadow-xl ${
+                <div className={`relative flex flex-col bg-white rounded-2xl p-8 border-2 transition-all duration-300 hover:shadow-xl h-full min-h-[420px] ${
                   plan.popular ? "border-teal-500 shadow-xl shadow-teal-500/10" : "border-slate-200 hover:border-teal-200"
                 }`}>
-                  {plan.popular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
-                      Most Popular
-                    </div>
-                  )}
-                  {plan.trial && !plan.popular && (
-                    <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-slate-100 text-slate-700 px-4 py-1 rounded-full text-sm font-medium border border-slate-200">
-                      Free trial
-                    </div>
-                  )}
-                  {plan.trial && plan.popular && (
-                    <div className="absolute -top-9 left-1/2 -translate-x-1/2 text-xs font-medium text-slate-500">
-                      Free trial included
-                    </div>
-                  )}
-                  <div className="text-lg font-semibold text-slate-900 mb-2">{plan.name}</div>
-                  <div className="flex items-baseline gap-1 mb-6">
-                    <span className="text-4xl font-bold text-slate-900">{plan.price}</span>
-                    <span className="text-slate-500">/month</span>
+                  {/* Tag area — fixed height so all cards align (Enterprise has no tag) */}
+                  <div className="h-9 mb-1 flex items-center justify-center">
+                    {plan.popular && (
+                      <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-teal-500 to-teal-700 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+                        Most Popular
+                      </div>
+                    )}
+                    {plan.trial && !plan.popular && (
+                      <div className="bg-slate-100 text-slate-700 px-4 py-1 rounded-full text-sm font-medium border border-slate-200">
+                        Free trial
+                      </div>
+                    )}
+                    {plan.trial && plan.popular && (
+                      <span className="text-xs font-medium text-slate-500">Free trial included</span>
+                    )}
                   </div>
-                  <ul className="space-y-3 mb-8">
+                  <div className="text-lg font-semibold text-slate-900 mb-2">{plan.name}</div>
+                  <div className="flex items-baseline gap-1 mb-6 min-h-[2.5rem]">
+                    {plan.priceCustom ? (
+                      <span className="text-xl font-bold text-slate-900">{plan.price}</span>
+                    ) : (
+                      <>
+                        <span className="text-4xl font-bold text-slate-900">{plan.price}</span>
+                        <span className="text-slate-500">/month</span>
+                      </>
+                    )}
+                  </div>
+                  <ul className="space-y-3 mb-8 flex-1">
                     {plan.features.map((feature, j) => (
                       <li key={j} className="flex items-center gap-3 text-slate-600">
                         <Check className="w-5 h-5 text-teal-600 flex-shrink-0" />
@@ -670,8 +696,8 @@ export default function LandingPage() {
                     ))}
                   </ul>
                   <a
-                    href="#contact"
-                    className={`block text-center px-6 py-3 rounded-xl font-semibold transition-all ${
+                    href={plan.ctaHref}
+                    className={`block text-center px-6 py-3 rounded-xl font-semibold transition-all mt-auto ${
                       plan.ctaStyle === "primary"
                         ? "bg-gradient-to-r from-teal-600 to-teal-700 text-white hover:from-teal-700 hover:to-teal-800 shadow-lg shadow-teal-500/20"
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -683,17 +709,6 @@ export default function LandingPage() {
               </FadeInOnScroll>
             ))}
           </div>
-
-          <FadeInOnScroll delay={300}>
-            <div className="text-center mt-10">
-              <p className="text-slate-600">
-                Need more volume?{" "}
-                <a href="#contact" className="text-teal-600 font-semibold hover:underline">
-                  Enterprise — contact for price →
-                </a>
-              </p>
-            </div>
-          </FadeInOnScroll>
         </div>
       </section>
 
@@ -839,6 +854,47 @@ export default function LandingPage() {
               </div>
             </div>
           </FadeInOnScroll>
+        </div>
+      </section>
+
+      {/* Trust & compliance — horizontal banner, single line */}
+      <section className="py-4 px-4 sm:px-6 bg-slate-50/80 border-y border-slate-200/80" aria-label="Trust and compliance">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 mb-3">
+            Trust & compliance
+          </p>
+          <div className="flex flex-nowrap items-center justify-center gap-x-4 sm:gap-x-6 overflow-x-auto text-sm">
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <ShieldCheck className="h-4 w-4 text-teal-600" />
+              </span>
+              GDPR compliant
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <Shield className="h-4 w-4 text-teal-600" />
+              </span>
+              POPIA compliant
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <Server className="h-4 w-4 text-teal-600" />
+              </span>
+              Data secured on Google Cloud
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <Lock className="h-4 w-4 text-teal-600" />
+              </span>
+              Encrypted in transit & at rest
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <CheckCircle2 className="h-4 w-4 text-teal-600" />
+              </span>
+              Responsible AI practices
+            </span>
+          </div>
         </div>
       </section>
 

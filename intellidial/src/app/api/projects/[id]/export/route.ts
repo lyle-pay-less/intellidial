@@ -77,7 +77,7 @@ export async function GET(
   }
 
   const { listContacts } = await import("@/lib/data/store");
-  const { contacts } = listContacts(id, { limit: 10000, offset: 0 });
+  const { contacts } = await listContacts(id, { limit: 10000, offset: 0 });
 
   const { searchParams } = new URL(req.url);
   const failedOnly = searchParams.get("failed") === "true";

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { X, Mail, Lock, Loader2, Shield } from "lucide-react";
+import { X, Mail, Lock, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
 function GoogleIcon({ className }: { className?: string }) {
@@ -123,12 +123,12 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
         aria-hidden="true"
       />
 
-      {/* Modal card — centered over hero, subtle scale-in */}
+      {/* Modal card — same layout as /login page */}
       <div
-        className="relative w-full max-w-md rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xl shadow-slate-900/20 backdrop-blur-sm animate-modal-in"
+        className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 animate-modal-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative p-6 sm:p-8">
+        <div className="relative p-6 sm:p-8 space-y-5">
           <button
             type="button"
             onClick={onClose}
@@ -138,29 +138,32 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
             <X className="w-5 h-5" />
           </button>
 
-          {/* Branding + slogan (convincer) */}
-          <div className="text-center mb-6">
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <img src="/intellidial-logo.png" alt="Intellidial" className="h-9 w-auto" />
-              <span className="font-display text-lg font-semibold text-slate-900">
-                Intelli<span className="text-teal-600">dial</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">AI-powered phone research at scale</p>
+          {/* Logo and name — match /login */}
+          <div className="flex flex-col items-center mb-6" id="login-modal-title">
+            <img
+              src="/intellidial-logo.png"
+              alt="Intellidial"
+              className="h-12 w-12 mb-3"
+            />
+            <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+              Intelli<span className="text-teal-600">dial</span>
+            </h2>
+            <p className="mt-2 text-slate-600 text-sm">
+              Log in to access your projects and call results
+            </p>
           </div>
-          <h2 id="login-modal-title" className="font-display text-xl font-bold text-slate-900 text-center mb-6">
-            Log in
-          </h2>
 
           {message && (
-            <p className={`text-sm mb-4 ${message.type === "error" ? "text-red-600" : "text-teal-600"}`}>
+            <p className={`text-sm ${message.type === "error" ? "text-red-600" : "text-teal-600"}`}>
               {message.text}
             </p>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="modal-email" className="sr-only">Email</label>
+              <label htmlFor="modal-email" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Email
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
@@ -168,14 +171,16 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Email"
+                  placeholder="you@company.com"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none transition-all text-sm"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all"
                 />
               </div>
             </div>
             <div>
-              <label htmlFor="modal-password" className="sr-only">Password</label>
+              <label htmlFor="modal-password" className="block text-sm font-medium text-slate-700 mb-1.5">
+                Password
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
@@ -183,61 +188,71 @@ export function LoginModal({ isOpen, onClose, onSuccess }: LoginModalProps) {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
+                  placeholder="••••••••"
                   required
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none transition-all text-sm"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none transition-all"
                 />
               </div>
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white py-2.5 rounded-lg font-medium text-sm hover:from-teal-700 hover:to-teal-800 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-teal-700 text-white py-3 rounded-xl font-semibold hover:from-teal-700 hover:to-teal-800 transition-all shadow-lg shadow-teal-600/20 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Signing in…
+                </>
               ) : (
                 "Log in"
               )}
             </button>
-          </form>
 
-          {/* Social icons below login — minimal */}
-          <div className="flex justify-center gap-3 mt-6 pt-6 border-t border-slate-100">
-            {SOCIAL_PROVIDERS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => handleSocialLogin(id as "google" | "microsoft")}
-                disabled={!!socialLoading}
-                title={label}
-                aria-label={label}
-                className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+            {/* Social login icons — match /login */}
+            <div className="flex items-center justify-center gap-4 pt-2">
+              {SOCIAL_PROVIDERS.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => handleSocialLogin(id as "google" | "microsoft")}
+                  disabled={!!socialLoading}
+                  title={label}
+                  aria-label={label}
+                  className="flex items-center justify-center w-10 h-10 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  {socialLoading === id ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
+                  ) : (
+                    <Icon className="w-5 h-5 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-center space-y-1 pt-2">
+              <Link
+                href="/dashboard"
+                className="block text-sm font-medium text-teal-600 hover:text-teal-700"
+                onClick={onClose}
               >
-                {socialLoading === id ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-slate-500" />
-                ) : (
-                  <Icon className="w-5 h-5 shrink-0" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          <div className="text-center mt-5 space-y-1">
-            <button type="button" className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
-              Forgot password?
-            </button>
-            <p className="text-xs text-slate-400">
-              No account?{" "}
-              <Link href="/#contact" className="text-teal-600 hover:text-teal-700 font-medium" onClick={onClose}>
-                Sign up
+                Continue to back office →
               </Link>
-            </p>
-            <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 mt-4">
-              <Shield className="w-3.5 h-3.5 text-teal-500/70" aria-hidden />
-              Secure sign-in
-            </p>
-          </div>
+              <Link
+                href="/"
+                className="block text-sm text-slate-500 hover:text-teal-600 transition-colors"
+                onClick={onClose}
+              >
+                Forgot password?
+              </Link>
+              <p className="text-sm text-slate-500">
+                Don&apos;t have an account?{" "}
+                <Link href="/signup" className="font-medium text-teal-600 hover:text-teal-700" onClick={onClose}>
+                  Sign up
+                </Link>
+              </p>
+            </div>
+          </form>
         </div>
       </div>
     </div>

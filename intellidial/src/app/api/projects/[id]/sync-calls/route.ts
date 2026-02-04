@@ -41,21 +41,67 @@ export async function GET(
   }
 
   const { contacts } = await listContacts(projectId, { limit: 5000 });
-  const withCallId = contacts.filter(
+  const callingWithCallId = contacts.filter(
     (c) => c.status === "calling" && c.vapiCallId?.trim()
+  );
+  const callingNoCallId = contacts.filter(
+    (c) => c.status === "calling" && !c.vapiCallId?.trim()
   );
   let synced = 0;
 
-  for (const contact of withCallId) {
+  // Unstick contacts that are "calling" but have no VAPI call ID (e.g. never saved or old bug)
+  for (const contact of callingNoCallId) {
+    await updateContact(contact.id, {
+      status: "failed",
+      callResult: {
+        attemptedAt: contact.updatedAt ?? new Date().toISOString(),
+        failureReason:
+          "Result unavailable — the call may have completed; we couldn't retrieve transcript/recording (no call ID saved).",
+      },
+    });
+    synced++;
+  }
+
+  const STALE_CALL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+  for (const contact of callingWithCallId) {
     const callId = contact.vapiCallId!;
     const call = await getCall(callId);
-    if (!call) continue;
+    if (!call) {
+      await updateContact(contact.id, {
+        status: "failed",
+        callResult: {
+          attemptedAt: new Date().toISOString(),
+          failureReason:
+            "Result unavailable — the call may have completed; we couldn't retrieve transcript/recording (provider may have purged the call).",
+        },
+        vapiCallId: null,
+      });
+      synced++;
+      continue;
+    }
 
     const endedAt = call.endedAt ?? null;
-    const isEnded = call.status === "ended" || endedAt != null;
-    if (!isEnded) continue;
-
     const startedAt = call.startedAt ? new Date(call.startedAt).getTime() : 0;
+    const isEnded = call.status === "ended" || endedAt != null;
+    const isStale = startedAt > 0 && Date.now() - startedAt > STALE_CALL_MS;
+
+    if (!isEnded && !isStale) continue;
+
+    if (!isEnded && isStale) {
+      await updateContact(contact.id, {
+        status: "failed",
+        callResult: {
+          attemptedAt: call.startedAt ?? new Date().toISOString(),
+          failureReason:
+            "Result unavailable — the call may have completed; we couldn't retrieve final status/transcript (call was too old to sync).",
+        },
+        vapiCallId: null,
+      });
+      synced++;
+      continue;
+    }
+
     const endTs = endedAt ? new Date(endedAt).getTime() : 0;
     const durationSeconds =
       startedAt && endTs && endTs >= startedAt

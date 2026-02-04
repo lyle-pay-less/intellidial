@@ -3,25 +3,21 @@
 ## Instructions Tab Auto-Fill
 
 ### Current Status
-- ✅ Mock AI generation by industry (`api/projects/[id]/generate`)
+- ✅ Mock AI generation by industry (`api/projects/[id]/generate`) — fallback when Gemini not configured
 - ✅ Org validation before generate (x-user-id, getProject)
-- ❌ **Real Gemini API not implemented**
+- ✅ **Gemini API implemented** — used when `GEMINI_API_KEY` is set
 
-### Task: Replace Mock with Gemini API
+### Task: Replace Mock with Gemini API — DONE
 
-**Location**: `src/app/api/projects/[id]/generate/route.ts`
+**Location**: `src/app/api/projects/[id]/generate/route.ts`, `src/lib/gemini/client.ts`
 
-**What needs to be done**:
-1. Add `GEMINI_API_KEY` to `.env`
-2. Create `src/lib/gemini/client.ts` (server-side only)
-3. Replace MOCK_BY_INDUSTRY with Gemini API calls for:
-   - [ ] Tone (from industry, goal)
-   - [ ] Goal (from industry)
-   - [ ] Questions (from industry, count)
-   - [ ] Field names (from questions)
-   - [ ] Script (from full config)
-4. Ensure org validation before every Gemini request
-5. Document prompt templates; never include contact PII in prompts
+**Done**:
+1. ✅ Add `GEMINI_API_KEY` to `.env` (see `.env.example`)
+2. ✅ Create `src/lib/gemini/client.ts` (server-side only)
+3. ✅ Gemini API used for: Tone (from industry), Goal (from industry), Questions (from industry + optional goal), Field names (from questions), Script (one coherent prompt from tone + goal + questions)
+4. ✅ Org validation before every request
+5. ✅ Prompts use only industry/goal/questions — no contact PII
+6. ✅ Final agent script is one coherent flowing prompt (Gemini combines tone, goal, questions; fallback builds one paragraph)
 
 **Priority**: High (enables rich, context-aware agent setup)
 

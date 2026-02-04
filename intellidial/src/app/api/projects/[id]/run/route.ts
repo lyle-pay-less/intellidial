@@ -16,6 +16,16 @@ export async function POST(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const { updated } = await runProjectSimulation(id);
+  let contactIds: string[] | undefined;
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (Array.isArray(body?.contactIds) && body.contactIds.length > 0) {
+      contactIds = body.contactIds;
+    }
+  } catch {
+    // no body or invalid
+  }
+
+  const { updated } = await runProjectSimulation(id, contactIds);
   return NextResponse.json({ updated, status: "completed" });
 }

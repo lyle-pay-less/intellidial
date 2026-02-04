@@ -13,6 +13,8 @@ This folder contains tasks and features that are planned but not yet implemented
 | [Phone Numbers](./PHONE_NUMBERS.md) | High | ❌ Not started | Per-org caller ID (provision or BYON) |
 | [Contacts Firestore Persistence](./CONTACTS_FIRESTORE_PERSISTENCE.md) | High | ❌ Not started | Persist contacts to Firestore (currently in-memory only) |
 | [Settings Org Scoping](./SETTINGS_ORG_SCOPING.md) | Medium | ❌ Not started | Scope subscription, payments, invoices by org |
+| [Lead Generation Research](./LEAD_GENERATION_RESEARCH.md) | Medium | ❌ Not started | Research real SA companies for lead lists (replace generic names) |
+| [Value Prop Communication](./VALUE_PROP_COMMUNICATION.md) | Medium | ❌ Not started | Communicate value proposition efficiently across all channels (landing page, emails, sales scripts, etc.) |
 
 ## Implementation Order (Recommended)
 
