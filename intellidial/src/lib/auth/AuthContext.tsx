@@ -61,6 +61,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const auth = getFirebaseAuth();
     if (!auth) {
+      // Only use mock dev user in development/local - NEVER in production
+      const isProduction = typeof window !== "undefined" && 
+        (window.location.hostname.includes("run.app") || 
+         window.location.hostname.includes("intellidial.co.za") ||
+         process.env.NODE_ENV === "production");
+      
+      if (isProduction) {
+        console.error("[AuthContext] ⚠️ CRITICAL: Firebase Auth not configured in production! This should never happen.");
+        console.error("[AuthContext] Firebase config:", {
+          apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ? "***set***" : "MISSING",
+          authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ? "***set***" : "MISSING",
+          projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID ? "***set***" : "MISSING",
+        });
+        // Don't set mock user in production - let it fail properly
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      
+      // Only use mock in local dev
+      console.warn("[AuthContext] Firebase Auth not configured, using mock dev user (local dev only)");
       setUser(MOCK_DEV_USER);
       setLoading(false);
       return;
