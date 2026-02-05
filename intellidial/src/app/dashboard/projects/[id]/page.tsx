@@ -80,6 +80,7 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [duplicating, setDuplicating] = useState(false);
+  const [orgName, setOrgName] = useState<string | null>(null);
 
   const fetchProject = useCallback(async () => {
     if (!id || !user?.uid) return;
@@ -131,6 +132,18 @@ export default function ProjectDetailPage() {
       await syncCallsThenRefresh();
     })().finally(() => setLoading(false));
   }, [id, fetchProject, fetchContacts, syncCallsThenRefresh]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    fetch("/api/auth/organization", { headers: authHeaders })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasOrganization && data.organization?.name) {
+          setOrgName(data.organization.name);
+        }
+      })
+      .catch(() => {});
+  }, [user?.uid, authHeaders]);
 
   const refreshContacts = () => fetchContacts(0);
 
@@ -266,7 +279,7 @@ export default function ProjectDetailPage() {
         />
       )}
       {activeTab === "instructions" && (
-        <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} />
+        <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} orgName={orgName} />
       )}
       {activeTab === "results" && (
         <ResultsTab
@@ -1444,19 +1457,36 @@ const INDUSTRIES = [
   { value: "other", label: "Other" },
 ];
 
+const AGENT_VOICES = [
+  { value: "default", label: "Default (Rachel)" },
+  { value: "rachel", label: "Rachel" },
+  { value: "adam", label: "Adam" },
+  { value: "antoni", label: "Antoni" },
+  { value: "sam", label: "Sam" },
+] as const;
+
 function InstructionsTab({
   project,
   onUpdate,
   authHeaders,
+  orgName,
 }: {
   project: ProjectWithId;
   onUpdate: () => void;
   authHeaders: Record<string, string>;
+  orgName: string | null;
 }) {
+  const [agentName, setAgentName] = useState(project.agentName ?? "");
+  const [agentCompany, setAgentCompany] = useState(project.agentCompany ?? orgName ?? "");
+  const [agentNumber, setAgentNumber] = useState(project.agentNumber ?? "");
+  const [agentPhoneNumberId, setAgentPhoneNumberId] = useState(project.agentPhoneNumberId ?? "");
+  const [phoneNumbers, setPhoneNumbers] = useState<{ id: string; number: string }[]>([]);
+  const [phoneNumbersLoading, setPhoneNumbersLoading] = useState(true);
+  const [agentVoice, setAgentVoice] = useState(project.agentVoice ?? "default");
+  const [goal, setGoal] = useState(project.goal ?? "");
   const [industry, setIndustry] = useState(project.industry ?? "");
   const [industryOther, setIndustryOther] = useState("");
   const [tone, setTone] = useState(project.tone ?? "");
-  const [goal, setGoal] = useState(project.goal ?? "");
   const [agentQuestions, setAgentQuestions] = useState<AgentQuestion[]>(
     project.agentQuestions ?? []
   );
@@ -1475,17 +1505,49 @@ function InstructionsTab({
   const [generating, setGenerating] = useState<string | null>(null);
 
   useEffect(() => {
+    setAgentName(project.agentName ?? "");
+    setAgentCompany(project.agentCompany ?? "");
+    setAgentNumber(project.agentNumber ?? "");
+    setAgentPhoneNumberId(project.agentPhoneNumberId ?? "");
+    setAgentVoice(project.agentVoice ?? "default");
+    setGoal(project.goal ?? "");
     const ind = project.industry ?? "";
     const isInList = INDUSTRIES.some((o) => o.value === ind);
     setIndustry(isInList ? ind : (ind ? "other" : ""));
     setIndustryOther(ind && !isInList ? ind : "");
     setTone(project.tone ?? "");
-    setGoal(project.goal ?? "");
     setAgentQuestions(project.agentQuestions ?? []);
     setCaptureFields(project.captureFields ?? []);
     setAgentInstructions(project.agentInstructions ?? "");
     setSurveyEnabled(project.surveyEnabled ?? false);
-  }, [project.id, project.industry, project.tone, project.goal, project.agentQuestions, project.captureFields, project.agentInstructions, project.surveyEnabled]);
+  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.agentInstructions, project.surveyEnabled, orgName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setPhoneNumbersLoading(true);
+      try {
+        const res = await fetch("/api/phone-numbers", { headers: authHeaders });
+        if (cancelled) return;
+        if (res.ok) {
+          const data = await res.json();
+          const list = Array.isArray(data?.numbers) ? data.numbers : [];
+          setPhoneNumbers(list);
+          if (list.length === 1) {
+            setAgentPhoneNumberId((prev) => prev || list[0].id);
+            setAgentNumber((prev) => prev || list[0].number);
+          }
+        } else {
+          setPhoneNumbers([]);
+        }
+      } catch {
+        if (!cancelled) setPhoneNumbers([]);
+      } finally {
+        if (!cancelled) setPhoneNumbersLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authHeaders]);
   useEffect(() => {
     if (project.surveyEnabled !== undefined && project.surveyEnabled !== null) setSurveyAcknowledged(true);
   }, [project.surveyEnabled]);
@@ -1501,6 +1563,7 @@ function InstructionsTab({
       tone,
       goal,
     };
+    if (type === "goal") body.goal = goal;
     if (type === "fieldNames") body.questions = agentQuestions;
     else if (type === "script") body.questions = agentQuestions.map((q) => q.text);
     try {
@@ -1603,6 +1666,11 @@ function InstructionsTab({
           ...authHeaders,
         },
         body: JSON.stringify({
+          agentName: agentName.trim() || null,
+          agentCompany: agentCompany.trim() || null,
+          agentNumber: agentNumber.trim() || null,
+          agentPhoneNumberId: agentPhoneNumberId.trim() || null,
+          agentVoice: agentVoice || null,
           industry: industry === "other" ? (industryOther || null) : (industry || null),
           tone: tone.trim() || null,
           goal: goal.trim() || null,
@@ -1642,9 +1710,9 @@ function InstructionsTab({
 
   const questionCount = agentQuestions.filter((q) => q.text.trim()).length;
   const stepsRaw = [
+    { id: "goal", label: "Goal", hasContent: !!goal.trim() },
     { id: "industry", label: "Industry", hasContent: !!canGenerate },
     { id: "tone", label: "Tone", hasContent: !!tone.trim() },
-    { id: "goal", label: "Goal", hasContent: !!goal.trim() },
     { id: "questions", label: "Questions", hasContent: questionCount > 0 },
     { id: "fields", label: "Field names", hasContent: captureFields.length >= questionCount && questionCount > 0 },
     { id: "survey", label: "Survey", hasContent: surveyAcknowledged },
@@ -1710,8 +1778,129 @@ function InstructionsTab({
       </div>
 
       <p className="text-sm text-slate-600">
-        Follow the steps below. AI generates each section — edit as needed.
+        Start with your goal, then set agent identity and follow the steps. Use &quot;Enhance with AI&quot; to structure and improve your goal.
       </p>
+
+      {/* Goal — first step: user types goal; optional Enhance with AI */}
+      <div
+        className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
+          nextStep === "goal"
+            ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
+            : "border-slate-200 bg-white"
+        }`}
+      >
+        <label className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+          <Target className="h-4 w-4 text-teal-600" />
+          Goal
+          {nextStep === "goal" && (
+            <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
+              Start here
+            </span>
+          )}
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          What should the agent achieve on each call? Type or paste; use &quot;Enhance with AI&quot; to structure it, fix errors, and add steps you might have missed.
+        </p>
+        <div className="flex flex-col gap-3">
+          <textarea
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder="e.g. Call leads to confirm interest, answer basic questions, and book a demo if they're interested. Be friendly and brief."
+            rows={3}
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-none"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => generate("goal")}
+              disabled={!goal.trim() || generating === "goal"}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${
+                nextStep === "goal"
+                  ? "bg-teal-600 text-white hover:bg-teal-700"
+                  : "bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+              }`}
+            >
+              {generating === "goal" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              Enhance with AI
+            </button>
+            <span className="text-xs text-slate-400">Structures your goal, fixes errors, adds missing steps</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Agent settings — identity and voice (used in prompt) */}
+      <div className="rounded-2xl border-2 border-slate-200 bg-white p-6 shadow-sm">
+        <label className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+          <Headphones className="h-4 w-4 text-teal-600" />
+          Agent settings
+        </label>
+        <p className="mb-4 text-xs text-slate-500">
+          These are used when the agent introduces itself and in the call prompt.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Agent name</label>
+            <input
+              type="text"
+              value={agentName}
+              onChange={(e) => setAgentName(e.target.value)}
+              placeholder="e.g. Sarah"
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Company (calling on behalf of)</label>
+            <input
+              type="text"
+              value={agentCompany}
+              onChange={(e) => setAgentCompany(e.target.value)}
+              placeholder="e.g. Acme Health"
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Outbound number (agent&apos;s number)</label>
+            <select
+              value={agentPhoneNumberId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setAgentPhoneNumberId(id);
+                const opt = phoneNumbers.find((n) => n.id === id);
+                setAgentNumber(opt?.number ?? "");
+              }}
+              disabled={phoneNumbersLoading}
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none disabled:opacity-60"
+            >
+              <option value="">
+                {phoneNumbersLoading ? "Loading…" : phoneNumbers.length === 0 ? "No numbers configured" : "Select number…"}
+              </option>
+              {phoneNumbers.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.number}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">Voice</label>
+            <select
+              value={agentVoice}
+              onChange={(e) => setAgentVoice(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+            >
+              {AGENT_VOICES.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
 
       {/* Industry */}
       <div
@@ -1726,7 +1915,7 @@ function InstructionsTab({
           Industry
           {nextStep === "industry" && (
             <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
-              Start here
+              Next step
             </span>
           )}
         </label>
@@ -1802,54 +1991,6 @@ function InstructionsTab({
           onChange={(e) => setTone(e.target.value)}
           placeholder="e.g. Professional, warm, and curious. Speak clearly at a relaxed pace."
           rows={3}
-          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-none"
-        />
-      </div>
-
-      {/* Goal */}
-      <div
-        className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
-          nextStep === "goal"
-            ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
-            : "border-slate-200 bg-gradient-to-br from-slate-50 to-white"
-        }`}
-      >
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <label className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
-            <Target className="h-4 w-4 text-teal-600" />
-            Goal
-            {nextStep === "goal" && (
-              <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
-                Next step
-              </span>
-            )}
-          </label>
-          <button
-            type="button"
-            onClick={() => generate("goal")}
-            disabled={!canGenerate || generating === "goal"}
-            className={`animate-glisten flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-              nextStep === "goal"
-                ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:bg-teal-700"
-                : "bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-            }`}
-          >
-            {generating === "goal" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            Generate
-          </button>
-        </div>
-        <p className="mb-3 text-xs text-slate-500">
-          What the agent aims to achieve. AI-generated; you can edit.
-        </p>
-        <textarea
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          placeholder="e.g. Qualify leads and book meetings with interested prospects."
-          rows={2}
           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-none"
         />
       </div>

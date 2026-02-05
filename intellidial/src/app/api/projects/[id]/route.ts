@@ -38,9 +38,9 @@ export async function PATCH(
   // Only pass defined fields so we don't overwrite with undefined in Firestore
   const updates: Record<string, unknown> = {};
   const keys = [
-    "name", "description", "industry", "tone", "goal", "agentQuestions",
-    "captureFields", "agentInstructions", "status", "notifyOnComplete",
-    "surveyEnabled", "callWindowStart", "callWindowEnd",
+    "name", "description", "agentName", "agentCompany", "agentNumber", "agentPhoneNumberId", "agentVoice", "userGoal",
+    "industry", "tone", "goal", "agentQuestions", "captureFields", "agentInstructions",
+    "status", "notifyOnComplete", "surveyEnabled", "callWindowStart", "callWindowEnd",
   ] as const;
   for (const key of keys) {
     if (body[key] !== undefined) updates[key] = body[key];

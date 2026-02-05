@@ -13,4 +13,4 @@ VAPI_DEMO_ASSISTANT_ID=47328f09-ddde-4084-adb5-55b37188c785
 VAPI_PUBLIC_KEY=your_public_key_from_dashboard
 ```
 
-Restart `npm run dev` in intellidial. No `.env.local` or `NEXT_PUBLIC_` needed.
+Restart `npm run dev` in intellidial.

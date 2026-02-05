@@ -406,17 +406,93 @@ steps:
 
 ---
 
-### Step 16: Set Up Custom Domain (Optional)
+### Step 16: Set Up Custom Domain — Application Load Balancer (europe-west2)
 
-☐ **Step 16: Set Up Custom Domain (Optional)**
+**Why:** Direct Cloud Run domain mapping is not available in europe-west2 (London). Use a **Global external Application Load Balancer** with a **Serverless NEG** pointing to your Cloud Run service. Cost: ~\$18–20/month for the load balancer.
 
-☐ Go to [Cloud Run](https://console.cloud.google.com/run)
-☐ Click on `intellidial` service
-☐ Go to **"Custom Domains"** tab
-☐ Click **"Add Mapping"**
-☐ Enter your domain
-☐ Follow DNS setup instructions
-☐ Verify SSL certificate (automatic)
+**Why not in Cloud Build?** The ALB is **one-time infrastructure**: you create the NEG, backend, URL map, HTTPS proxy, and static IP once. The NEG points at the Cloud Run *service name* (e.g. `intellidial`), so every new deploy (new revision) automatically gets traffic—no LB changes needed. Putting ALB creation in the main pipeline would risk recreating the LB on every push (changing the static IP and breaking DNS). Do Step 16 once manually or via a separate one-off script; keep Cloud Build for build + deploy only.
+
+---
+
+**16a. Create Serverless NEG (backend for Cloud Run)**
+
+☐ Go to [Network Services → Load balancing](https://console.cloud.google.com/net-services/loadbalancing/list/loadBalancers) (project **intellidial-39ca7**)
+☐ Or run:
+
+```bash
+# Set project and region
+gcloud config set project intellidial-39ca7
+REGION=europe-west2
+
+# Create serverless NEG for Cloud Run service "intellidial"
+gcloud compute network-endpoint-groups create intellidial-neg \
+  --region=$REGION \
+  --network-endpoint-type=serverless \
+  --cloud-run-service=intellidial
+```
+
+---
+
+**16b. Create Backend Service**
+
+☐ In Load balancing: **Create load balancer** → choose **Application Load Balancer (HTTP(S))**
+☐ Or run:
+
+```bash
+# Backend service using the NEG
+gcloud compute backend-services create intellidial-backend \
+  --global \
+  --load-balancing-scheme=EXTERNAL_MANAGED
+
+gcloud compute backend-services add-backend intellidial-backend \
+  --global \
+  --network-endpoint-group=intellidial-neg \
+  --network-endpoint-group-region=$REGION
+```
+
+---
+
+**16c. URL map + HTTPS proxy + forwarding rule**
+
+☐ Create **URL map** (default route to `intellidial-backend`)
+☐ Create **target HTTPS proxy** with a **Google-managed SSL certificate** for `intellidial.co.za` (and `www.intellidial.co.za` if needed)
+☐ Create **forwarding rule** (global, external, get a static IP)
+
+Console path: **Load balancing** → **Create load balancer** → **Application load balancer** → **From Internet to my VMs / serverless** → then:
+- Backend: add backend **intellidial-backend** (NEG)
+- Frontend: HTTPS, create Google-managed cert for **intellidial.co.za**, reserve static IP
+- Create
+
+---
+
+**16d. DNS at your domain provider**
+
+☐ In your domain portal (intellidial.co.za): **Manage DNS**
+☐ Add **A** record: name `@` (or blank), value = **the load balancer’s static IP** (from the forwarding rule)
+☐ Optional **www**: add **CNAME** `www` → the LB’s hostname (e.g. from the forwarding rule / frontend), or A to same IP if your provider allows
+☐ Save. Propagation can take a few minutes; SSL can take up to 24h.
+
+---
+
+**16e. Restrict Cloud Run to LB only (optional)**
+
+To allow only traffic from the load balancer (no direct run.app access):
+
+```bash
+gcloud run services update intellidial \
+  --region=europe-west2 \
+  --ingress=internal-and-cloud-load-balancing
+```
+
+---
+
+**References**
+
+- [Set up global external Application Load Balancer with Cloud Run](https://cloud.google.com/load-balancing/docs/https/setup-global-ext-https-serverless)
+- [Google-managed SSL certificates](https://cloud.google.com/load-balancing/docs/ssl-certificates/google-managed-certs)
+
+**Current URL (until ALB + DNS are done):**  
+`https://intellidial-81645167087.europe-west2.run.app`
 
 ---
 

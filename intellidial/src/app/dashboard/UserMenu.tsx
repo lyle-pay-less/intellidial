@@ -21,8 +21,16 @@ export function UserMenu() {
 
   if (!user) return null;
 
-  const initial = user.email?.[0]?.toUpperCase() ?? "?";
   const displayName = user.displayName ?? user.email ?? "User";
+  const initials = (() => {
+    const name = (user.displayName ?? "").trim();
+    if (!name) return user.email?.[0]?.toUpperCase() ?? "?";
+    const parts = name.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
+  })();
 
   return (
     <div className="relative" ref={ref}>
@@ -31,10 +39,10 @@ export function UserMenu() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
       >
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-100 text-teal-700">
-          {initial}
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-700 text-xs font-medium">
+          {initials}
         </span>
-        <span className="hidden max-w-[120px] truncate sm:inline">{displayName}</span>
+        <span className="max-w-[120px] truncate">{displayName}</span>
         <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (

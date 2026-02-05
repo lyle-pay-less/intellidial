@@ -46,11 +46,21 @@ export type ProjectDoc = {
   assistantId?: string | null;
   /** VAPI structured output ID (for extracting captureFields from calls) */
   structuredOutputId?: string | null;
+  /** Agent identity (used in prompt): name, company calling on behalf of, outbound number */
+  agentName?: string | null;
+  agentCompany?: string | null;
+  agentNumber?: string | null;
+  /** VAPI phone number ID used for outbound calls (dropdown selection). */
+  agentPhoneNumberId?: string | null;
+  /** VAPI/11labs voice id — e.g. 11labs voiceId for dropdown */
+  agentVoice?: string | null;
+  /** User's own goal description (typed or from voice note); primary goal input */
+  userGoal?: string | null;
   /** Industry for AI-generated defaults */
   industry?: string | null;
   /** How the agent should act — AI-generated */
   tone?: string | null;
-  /** Goal of the agent — AI-generated */
+  /** Goal of the agent — AI-generated expansion of userGoal */
   goal?: string | null;
   /** Questions the agent asks */
   agentQuestions?: AgentQuestion[];

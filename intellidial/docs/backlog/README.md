@@ -1,69 +1,34 @@
 # Backlog
 
-This folder contains tasks and features that are planned but not yet implemented.
+Planned features and tasks not yet implemented.
 
 ## Current Backlog Items
 
-| Item | Priority | Status | Description |
-|------|----------|--------|-------------|
-| [Email Sending](./EMAIL_SENDING.md) | High | ❌ Not started | Real email for team invitations |
-| [Gemini Integration](./GEMINI_INTEGRATION.md) | High | ❌ Not started | Replace mock with Gemini API for Instructions tab auto-fill |
-| [VAPI Assistant Creation](./VAPI_ASSISTANT_CREATION.md) | High | ❌ Not started | Create VAPI assistant per project when ready for calls |
-| [VAPI Calls & Webhooks](./VAPI_CALLS_WEBHOOKS.md) | High | ❌ Not started | Real outbound calls and call-ended webhook |
-| [Phone Numbers](./PHONE_NUMBERS.md) | High | ❌ Not started | Per-org caller ID (provision or BYON) |
-| [Contacts Firestore Persistence](./CONTACTS_FIRESTORE_PERSISTENCE.md) | High | ❌ Not started | Persist contacts to Firestore (currently in-memory only) |
-| [Settings Org Scoping](./SETTINGS_ORG_SCOPING.md) | Medium | ❌ Not started | Scope subscription, payments, invoices by org |
-| [Lead Generation Research](./LEAD_GENERATION_RESEARCH.md) | Medium | ❌ Not started | Research real SA companies for lead lists (replace generic names) |
-| [Value Prop Communication](./VALUE_PROP_COMMUNICATION.md) | Medium | ❌ Not started | Communicate value proposition efficiently across all channels (landing page, emails, sales scripts, etc.) |
+| Item | Priority | Description |
+|------|----------|-------------|
+| [Email Sending](./EMAIL_SENDING.md) | High | Real email for team invitations (Resend/SendGrid/Nodemailer) |
+| [Notifications](./NOTIFICATIONS.md) | Medium | In-app + email notifications (project complete, usage warnings) |
+| [Phone Numbers](./PHONE_NUMBERS.md) | Medium | Per-org caller ID (provision or BYON) — one number via env exists |
+| [Settings Org Scoping](./SETTINGS_ORG_SCOPING.md) | Medium | Scope subscription, payments, invoices by org; real SA payment gateway |
 
-## Implementation Order (Recommended)
+## Suggested Order
 
-1. **Contacts Firestore Persistence** — Prevent data loss on restart
-2. **Gemini Integration** — Instructions tab auto-fill (no external call dependency)
-3. **VAPI Assistant Creation** — Create agents from project config
-4. **Phone Numbers** — Per-org caller ID (required before real calls)
-5. **VAPI Calls & Webhooks** — Real calls and call result handling
-6. **Email Sending** — Team invitations (standalone)
-7. **Settings Org Scoping** — When wiring real SA payment gateway (PayFast/PayGate) + billing
+1. **Email Sending** — Unblocks team invites and notification emails
+2. **Settings org scoping** — When adding real billing (PayFast/PayGate)
+3. **Notifications** — After email sending works
+4. **Phone Numbers** — Per-org numbers when scaling beyond single number
 
 ---
 
-## How to Use This Backlog
+## How to Use
 
-1. **Add new items**: Create a new `.md` file for each major feature/task
-2. **Update status**: Mark completed items with ✅, in-progress with 🚧, not started with ❌
-3. **Link to code**: Include file paths and line numbers where relevant
-4. **Break down tasks**: Use checkboxes for sub-tasks
-5. **Add context**: Include why it's needed, current state, and requirements
+- **Add**: Create a new `.md` file per feature
+- **Update**: Mark items ✅ done, 🚧 in progress, ❌ not started
+- **Link**: Include file paths and line numbers
+- **Break down**: Use checkboxes for sub-tasks
 
-## Priority Guidelines
+## Priority
 
-- **High**: Blocks core functionality or user experience
-- **Medium**: Important but not blocking
-- **Low**: Nice to have, can be deferred
-
----
-
-## Quick Add Template
-
-```markdown
-# [Feature Name] - Backlog
-
-## Current Status
-- ✅ What's done
-- ❌ What's not done
-
-## Task: [Description]
-
-**Location**: `path/to/file.ts`
-
-**What needs to be done**:
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
-
-**Notes**:
-- Additional context
-- Dependencies
-- Considerations
-```
+- **High**: Blocks core functionality
+- **Medium**: Important, not blocking
+- **Low**: Nice to have

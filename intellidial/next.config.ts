@@ -2,11 +2,9 @@ import type { NextConfig } from "next";
 import path from "path";
 import fs from "fs";
 
-// Load .env.local for local dev, .env for production
+// Load .env from root directory
 // In Cloud Run, environment variables come from Secret Manager (set in Cloud Run config)
-const envPath = process.env.NODE_ENV === 'production' 
-  ? path.resolve(__dirname, "..", ".env")
-  : path.resolve(__dirname, "..", ".env.local");
+const envPath = path.resolve(__dirname, "..", ".env");
 
 if (fs.existsSync(envPath)) {
   fs.readFileSync(envPath, "utf8")
@@ -18,6 +16,8 @@ if (fs.existsSync(envPath)) {
 }
 
 const nextConfig: NextConfig = {
+  // Hide the dev overlay "N" button in bottom-left (only in dev)
+  devIndicators: false,
   // Keep module resolution in this package (fixes "resolve tailwindcss in C:\code\doctor")
   serverExternalPackages: [],
   // Enable standalone output for Docker

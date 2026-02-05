@@ -20,7 +20,7 @@ export async function POST(
       );
     }
 
-    const result = acceptInvitation(token, userId);
+    const result = await acceptInvitation(token, userId);
     if (!result) {
       return NextResponse.json(
         { error: "Invalid or expired invitation" },

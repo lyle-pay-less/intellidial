@@ -11,7 +11,7 @@ const VAPI_BASE = "https://api.vapi.ai";
 /** Project shape we need for building assistant config (id + assistantId/structuredOutputId optional for update). */
 export type ProjectForVapi = Pick<
   ProjectDoc,
-  "name" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields"
+  "name" | "agentName" | "agentCompany" | "agentNumber" | "agentVoice" | "userGoal" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields"
 > & { id: string; assistantId?: string | null; structuredOutputId?: string | null };
 
 /** VAPI assistant create/update payload (subset we use). */
@@ -88,23 +88,71 @@ export function isPhoneNumberConfigured(): boolean {
   return !!process.env.VAPI_PHONE_NUMBER_ID?.trim();
 }
 
+/** VAPI phone number list item (id + E164 for display). */
+export type VapiPhoneNumberOption = { id: string; number: string };
+
+/**
+ * List phone numbers available for outbound calls.
+ * Calls VAPI GET /phone-number; on failure or empty, falls back to VAPI_PHONE_NUMBER_ID (and optional VAPI_PHONE_NUMBER_E164).
+ */
+export async function listPhoneNumbers(): Promise<VapiPhoneNumberOption[]> {
+  const fallbackId = process.env.VAPI_PHONE_NUMBER_ID?.trim();
+  const fallbackNumber = process.env.VAPI_PHONE_NUMBER_E164?.trim() || fallbackId || "Configured number";
+
+  try {
+    const res = await fetch(`${VAPI_BASE}/phone-number`, {
+      method: "GET",
+      headers: getVapiHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error(`VAPI phone-number list returned ${res.status}`);
+    }
+    const data = (await res.json()) as Array<{ id?: string; number?: string }>;
+    if (!Array.isArray(data) || data.length === 0) {
+      if (fallbackId) return [{ id: fallbackId, number: fallbackNumber }];
+      return [];
+    }
+    return data
+      .filter((n): n is { id: string; number: string } => typeof n?.id === "string" && typeof n?.number === "string")
+      .map((n) => ({ id: n.id, number: n.number }));
+  } catch {
+    if (fallbackId) return [{ id: fallbackId, number: fallbackNumber }];
+    return [];
+  }
+}
+
+/** Map dropdown value to 11labs voiceId. Add more as needed. */
+const VOICE_IDS: Record<string, string> = {
+  rachel: "21m00Tcm4TlvDq8ikWAM",
+  adam: "pNInz6obpgDQGcFmaJgB",
+  antoni: "ErXwobaYiN019PkySvjV",
+  sam: "yoZ06aMxZJJ28mfd3POQ",
+  default: "21m00Tcm4TlvDq8ikWAM",
+};
+
 /**
  * Build the system prompt for the VAPI assistant from project config.
- * Uses agentInstructions as the main script; appends goal and tone if present.
+ * Prepend agent identity (name, company, number) when set; then instructions, goal, tone, questions.
  * Does not include any contact PII.
  */
 function buildSystemPrompt(project: ProjectForVapi): string {
   const parts: string[] = [];
+  const agentName = typeof project.agentName === "string" ? project.agentName.trim() : "";
+  const agentCompany = typeof project.agentCompany === "string" ? project.agentCompany.trim() : "";
+  const agentNumber = typeof project.agentNumber === "string" ? project.agentNumber.trim() : "";
+  if (agentName || agentCompany || agentNumber) {
+    const identity: string[] = [];
+    if (agentName) identity.push(`You are ${agentName}.`);
+    if (agentCompany) identity.push(`You are calling on behalf of ${agentCompany}.`);
+    if (agentNumber) identity.push(`The number you are calling from is ${agentNumber}.`);
+    parts.push(identity.join(" "));
+  }
   const instructions = (project.agentInstructions ?? "").trim();
   if (instructions) parts.push(instructions);
-  const goal = typeof project.goal === 'string' ? project.goal.trim() : "";
-  if (goal) {
-    parts.push(`\nGOAL: ${goal}`);
-  }
-  const tone = typeof project.tone === 'string' ? project.tone.trim() : "";
-  if (tone) {
-    parts.push(`\nTONE: ${tone}`);
-  }
+  const goal = typeof project.goal === "string" ? project.goal.trim() : "";
+  if (goal) parts.push(`\nGOAL: ${goal}`);
+  const tone = typeof project.tone === "string" ? project.tone.trim() : "";
+  if (tone) parts.push(`\nTONE: ${tone}`);
   const questions = (project.agentQuestions ?? []).filter((q) => (q as AgentQuestion).text?.trim());
   if (questions.length > 0) {
     parts.push("\nQUESTIONS TO COVER (work these into the conversation naturally):");
@@ -128,9 +176,12 @@ function getWebhookBaseUrl(): string | undefined {
  */
 export function buildAssistantConfig(project: ProjectForVapi): VapiAssistantPayload {
   const systemContent = buildSystemPrompt(project);
-  const name = (project.name || "Agent").slice(0, 40); // VAPI name limit
+  const displayName = (project.agentName ?? project.name ?? "Agent").trim().slice(0, 40);
+  const name = displayName || "Agent";
   const base = getWebhookBaseUrl();
   const webhookUrl = base ? `${base.replace(/\/$/, "")}/api/webhooks/vapi/call-ended` : undefined;
+  const voiceKey = (project.agentVoice ?? "default").trim().toLowerCase() || "default";
+  const voiceId = VOICE_IDS[voiceKey] ?? VOICE_IDS.default;
 
   const payload: VapiAssistantPayload = {
     name,
@@ -141,7 +192,7 @@ export function buildAssistantConfig(project: ProjectForVapi): VapiAssistantPayl
     },
     voice: {
       provider: "11labs",
-      voiceId: "21m00Tcm4TlvDq8ikWAM", // Rachel — professional, matches existing scripts
+      voiceId,
     },
     firstMessage: "Hi, good day!",
     transcriber: {

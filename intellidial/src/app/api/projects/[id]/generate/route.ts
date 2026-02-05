@@ -170,17 +170,20 @@ Write a short tone description (2-4 sentences) for how the agent should act and 
     return NextResponse.json({ tone: config.tone });
   }
 
-  // —— Goal: Gemini generates from industry; fallback mock
+  // —— Goal: enhance the user's goal — structure it, fix errors, add important steps they may have forgotten.
   if (type === "goal") {
-    if (isGeminiConfigured()) {
-      const prompt = `You are helping configure an AI phone agent for outbound calls. The user's industry or use case is: "${label}".
+    const currentGoal = typeof body.goal === "string" ? body.goal.trim() : "";
+    if (isGeminiConfigured() && currentGoal) {
+      const prompt = `You are helping configure an AI phone agent for outbound calls. The user wrote this goal:
 
-Write a single clear goal (1-3 sentences) for what the agent aims to achieve on each call. Be specific to this industry. Output only the goal, no headings or labels.`;
+"${currentGoal.slice(0, 1000)}"
+
+Enhance it: (1) structure it clearly, (2) fix any grammar or clarity errors, (3) add any important steps or outcomes the user might have forgotten (e.g. confirm contact details, note objections, set next step). Keep their intent and tone. Return only the enhanced goal text, 2-5 sentences, no headings or bullet points.`;
       const goal = await generateText(prompt);
       if (goal) return NextResponse.json({ goal });
     }
     const config = getMockConfig(industryStr);
-    return NextResponse.json({ goal: config.goal });
+    return NextResponse.json({ goal: currentGoal || config.goal });
   }
 
   // —— Questions: Gemini generates from industry (and optional goal); fallback mock

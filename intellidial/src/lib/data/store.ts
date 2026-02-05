@@ -603,6 +603,12 @@ function projectFromFirestoreDoc(
     status: (d.status as ProjectWithId["status"]) ?? "draft",
     assistantId: (d.assistantId as string | null) ?? null,
     structuredOutputId: (d.structuredOutputId as string | null) ?? null,
+    agentName: (d.agentName as string | null) ?? null,
+    agentCompany: (d.agentCompany as string | null) ?? null,
+    agentNumber: (d.agentNumber as string | null) ?? null,
+    agentPhoneNumberId: (d.agentPhoneNumberId as string | null) ?? null,
+    agentVoice: (d.agentVoice as string | null) ?? null,
+    userGoal: (d.userGoal as string | null) ?? null,
     industry: (d.industry as string | null) ?? null,
     tone: (d.tone as string | null) ?? null,
     goal: (d.goal as string | null) ?? null,
@@ -701,7 +707,7 @@ export async function createProject(
 
 export async function updateProject(
   id: string,
-  data: Partial<Pick<ProjectDoc, "name" | "description" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "structuredOutputId">>
+  data: Partial<Pick<ProjectDoc, "name" | "description" | "agentName" | "agentCompany" | "agentNumber" | "agentPhoneNumberId" | "agentVoice" | "userGoal" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "structuredOutputId">>
 ): Promise<ProjectWithId | null> {
   let project = projects.get(id) ?? null;
   // Load from Firestore if not in memory (e.g. after server restart) so we can still persist
@@ -1076,16 +1082,50 @@ export async function getUserOrganization(userId: string): Promise<string | null
       const db = getFirebaseAdminFirestore();
       const userOrgDoc = await db.collection("userOrganizations").doc(userId).get();
       
+      let orgIdFromMapping: string | null = null;
       if (userOrgDoc.exists) {
         const data = userOrgDoc.data();
-        const orgId = data?.orgId;
-        if (orgId) {
-          console.log("[Store] Found organization in Firestore:", { userId, orgId });
-          // Update in-memory cache
-          userOrganizations.set(userId, orgId);
-          return orgId;
+        orgIdFromMapping = data?.orgId ?? null;
+      }
+
+      // If userOrganizations points to demo org but user is not dev-user-1, that's suspicious
+      // Check team members to find the correct org
+      if (orgIdFromMapping === DEMO_ORG_ID && userId !== "dev-user-1") {
+        console.log("[Store] userOrganizations points to demo org for non-dev user, checking team members:", { userId, orgIdFromMapping });
+        orgIdFromMapping = null; // Ignore the wrong mapping
+      }
+
+      // If we have a valid mapping, use it
+      if (orgIdFromMapping) {
+        console.log("[Store] Found organization in Firestore userOrganizations:", { userId, orgId: orgIdFromMapping });
+        userOrganizations.set(userId, orgIdFromMapping);
+        return orgIdFromMapping;
+      }
+
+      // Fallback: check team members - if user is a member of an org, they belong to that org
+      // Query all organizations and check if user is a member
+      // Note: This is a fallback for users who were added via invite but the mapping wasn't persisted
+      console.log("[Store] userOrganizations lookup failed or invalid, checking team members as fallback:", { userId });
+      const orgsSnap = await db.collection(COLLECTIONS.organizations).get();
+      for (const orgDoc of orgsSnap.docs) {
+        const memberDoc = await orgDoc.ref.collection("members").doc(userId).get();
+        if (memberDoc.exists) {
+          const orgId = orgDoc.id;
+          console.log("[Store] Found organization via team member lookup, persisting to userOrganizations:", { userId, orgId });
+          // Persist to userOrganizations for faster future lookups
+          try {
+            await db.collection("userOrganizations").doc(userId).set({ orgId });
+            userOrganizations.set(userId, orgId);
+            return orgId;
+          } catch (persistError) {
+            console.warn("[Store] Failed to persist user-org mapping after team member lookup:", persistError instanceof Error ? persistError.message : persistError);
+            // Still return the orgId even if persistence failed
+            userOrganizations.set(userId, orgId);
+            return orgId;
+          }
         }
       }
+      console.log("[Store] No organization found for user in userOrganizations or team members:", { userId });
     } catch (error) {
       console.warn("[Store] Failed to get organization from Firestore (Firebase may not be configured), falling back to in-memory:", error instanceof Error ? error.message : error);
       // Fall through to in-memory storage
@@ -1338,8 +1378,32 @@ export async function getInvitation(token: string): Promise<Invitation | null> {
 /**
  * Accept an invitation and create team member.
  */
-export function acceptInvitation(token: string, userId: string): { orgId: string; role: string } | null {
-  const invitation = invitations.get(token);
+export async function acceptInvitation(token: string, userId: string): Promise<{ orgId: string; role: string } | null> {
+  // Load invitation from Firestore if available
+  let invitation = invitations.get(token);
+  if (!invitation && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.invitations).doc(token).get();
+      if (doc.exists) {
+        const d = doc.data();
+        invitation = {
+          token,
+          email: d?.email ?? "",
+          role: d?.role ?? "viewer",
+          orgId: d?.orgId ?? "",
+          invitedBy: d?.invitedBy ?? "",
+          createdAt: d?.createdAt ?? "",
+          expiresAt: d?.expiresAt ?? "",
+          accepted: d?.accepted ?? false,
+        };
+        invitations.set(token, invitation);
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to load invitation from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+
   if (!invitation) return null;
 
   // Check if expired
@@ -1370,8 +1434,34 @@ export function acceptInvitation(token: string, userId: string): { orgId: string
     }
   }
 
-  // Link user to organization
+  // Link user to organization (persist to Firestore)
   userOrganizations.set(userId, invitation.orgId);
+  
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      // Persist user-org mapping
+      await db.collection("userOrganizations").doc(userId).set({ orgId: invitation.orgId });
+      // Update invitation as accepted
+      await db.collection(COLLECTIONS.invitations).doc(token).update({ accepted: true });
+      // Update team member status in Firestore
+      const memberRef = db
+        .collection(COLLECTIONS.organizations)
+        .doc(invitation.orgId)
+        .collection("members")
+        .doc(userId);
+      const memberDoc = await memberRef.get();
+      if (memberDoc.exists) {
+        await memberRef.update({
+          status: "active",
+          lastActive: new Date().toISOString(),
+        });
+      }
+      console.log("[Store] Accepted invitation and persisted to Firestore:", { userId, orgId: invitation.orgId, token });
+    } catch (error) {
+      console.warn("[Store] Failed to persist invitation acceptance to Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
 
   return {
     orgId: invitation.orgId,
