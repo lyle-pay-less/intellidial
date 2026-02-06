@@ -51,9 +51,9 @@ steps:
       - '--service-account'
       - 'cloud-run-intellidial@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-secrets'
-      - 'VAPI_API_KEY=vapi-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_PLACES_API_KEY=google-places-api-key:latest,VAPI_PHONE_NUMBER_ID=vapi-phone-number-id:latest,NEXT_PUBLIC_FIREBASE_API_KEY=next-public-firebase-api-key:latest,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=next-public-firebase-auth-domain:latest,NEXT_PUBLIC_FIREBASE_PROJECT_ID=next-public-firebase-project-id:latest,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=next-public-firebase-storage-bucket:latest,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=next-public-firebase-messaging-sender-id:latest,NEXT_PUBLIC_FIREBASE_APP_ID=next-public-firebase-app-id:latest'
+      - 'VAPI_API_KEY=vapi-api-key:latest,VAPI_PUBLIC_KEY=vapi-public-key:latest,VAPI_DEMO_ASSISTANT_ID=vapi-demo-assistant-id:latest,GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_PLACES_API_KEY=google-places-api-key:latest,VAPI_PHONE_NUMBER_ID=vapi-phone-number-id:latest,NEXT_PUBLIC_FIREBASE_API_KEY=next-public-firebase-api-key:latest,NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=next-public-firebase-auth-domain:latest,NEXT_PUBLIC_FIREBASE_PROJECT_ID=next-public-firebase-project-id:latest,NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=next-public-firebase-storage-bucket:latest,NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=next-public-firebase-messaging-sender-id:latest,NEXT_PUBLIC_FIREBASE_APP_ID=next-public-firebase-app-id:latest'
       - '--set-env-vars'
-      - 'GOOGLE_CLOUD_PROJECT=intellidial-39ca7,VAPI_PUBLIC_KEY=c9c56248-71f7-4a42-b159-468ef5508c70,VAPI_DEMO_ASSISTANT_ID=47328f09-ddde-4084-adb5-55b37188c785'
+      - 'GOOGLE_CLOUD_PROJECT=intellidial-39ca7'
       - '--allow-unauthenticated'
       - '--port'
       - '3000'
@@ -69,15 +69,15 @@ steps:
       - '0'
 
 # Note: NEXT_PUBLIC_* vars are hardcoded above (they're public anyway, embedded in client bundle)
-# VAPI_PUBLIC_KEY and VAPI_DEMO_ASSISTANT_ID are hardcoded in --set-env-vars (public values, safe to expose)
-# Other secrets (VAPI_API_KEY, GEMINI_*, etc.) are loaded from Secret Manager via --set-secrets
+# Runtime secrets (VAPI_*, GEMINI_*, etc.) are still loaded from Secret Manager via --set-secrets in deploy step
 
 # Options
 options:
   machineType: 'E2_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
 
-# Substitutions (not needed - most vars are in Secret Manager, VAPI public keys hardcoded)
+# Substitutions (not needed - all vars are in Secret Manager now)
+# NEXT_PUBLIC_ vars are stored in Secret Manager and mapped via --set-secrets
 substitutions: {}
 
 # Timeout (30 minutes)
