@@ -31,6 +31,9 @@ import {
   CalendarCheck,
   Server,
   ShieldCheck,
+  Settings,
+  FileAudio,
+  Scale,
 } from "lucide-react";
 
 // Animated counter hook
@@ -566,14 +569,17 @@ export default function LandingPage() {
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {[
+              { icon: Clock, title: "Massive Time Savings", desc: "Automate hundreds of calls per day. What takes your team weeks, we do in hours." },
+              { icon: Server, title: "Parallel Calling at Scale", desc: "Make multiple calls simultaneously. Scale from 10 to 10,000 calls without hiring extra staff." },
+              { icon: Settings, title: "Full Control & Customization", desc: "Control exactly when calls are made, customize agent behavior, and define conversation flows." },
+              { icon: FileAudio, title: "Complete Recordings & Transcripts", desc: "Every call recorded and fully transcribed for QA, compliance, and verification." },
+              { icon: FileSpreadsheet, title: "Structured Data Output", desc: "Get answers in clean, tabular format. Ready-to-use Excel files with exact data fields you need." },
+              { icon: Scale, title: "Scale Without Hiring", desc: "Handle 10 calls or 10,000 calls with the same setup. No need to hire or train additional staff." },
               { icon: Zap, title: "Natural AI Conversations", desc: "Our AI handles follow-ups, IVR systems, and complex dialogues naturally." },
-              { icon: FileSpreadsheet, title: "Structured Data Output", desc: "Not just transcripts—actual usable data in Excel with the fields you need." },
               { icon: Globe, title: "List Generation", desc: "No contact list? We build it using Google Places API. Just tell us what to find." },
-              { icon: Shield, title: "Full Recordings", desc: "Every call recorded for QA, compliance, and verification purposes." },
               { icon: Lock, title: "Local SA Numbers", desc: "Higher answer rates with local South African caller ID." },
-              { icon: Headphones, title: "Dedicated Support", desc: "Real humans available to help you succeed with your projects." },
-              { icon: Clock, title: "Instant Results", desc: "Get Excel files and recordings in real-time as calls complete." },
               { icon: Star, title: "Quality Guaranteed", desc: "95%+ accuracy or we'll rerun the calls at no extra cost." },
+              { icon: Headphones, title: "Dedicated Support", desc: "Real humans available to help you succeed with your projects." },
             ].map((feature, i) => (
               <FadeInOnScroll key={i} delay={i * 50}>
                 <div className="text-center group">
@@ -586,6 +592,121 @@ export default function LandingPage() {
               </FadeInOnScroll>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Coming Soon Integrations */}
+      <section className="py-16 md:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-slate-50">
+        <div className="max-w-4xl mx-auto">
+          <FadeInOnScroll>
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-amber-200">
+                Coming Soon
+              </div>
+              <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
+                Powerful Integrations
+              </h2>
+              <p className="text-slate-600">
+                Connect Intellidial with your favorite tools
+              </p>
+            </div>
+          </FadeInOnScroll>
+
+          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12">
+            {/* HubSpot */}
+            <FadeInOnScroll delay={100}>
+              <div className="flex flex-col items-center group">
+                <div className="relative">
+                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
+                    <img 
+                      src="https://cdn.simpleicons.org/hubspot/FF7A59" 
+                      alt="HubSpot" 
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        // Fallback to text if image fails
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent && !parent.querySelector('.fallback-text')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'fallback-text text-slate-700 font-bold text-lg';
+                          fallback.textContent = 'HubSpot';
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    Soon
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 font-medium">HubSpot</p>
+              </div>
+            </FadeInOnScroll>
+
+            {/* Salesforce */}
+            <FadeInOnScroll delay={200}>
+              <div className="flex flex-col items-center group">
+                <div className="relative">
+                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
+                    <img 
+                      src="https://cdn.simpleicons.org/salesforce/00A1E0" 
+                      alt="Salesforce" 
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent && !parent.querySelector('.fallback-text')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'fallback-text text-slate-700 font-bold text-lg';
+                          fallback.textContent = 'Salesforce';
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    Soon
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 font-medium">Salesforce</p>
+              </div>
+            </FadeInOnScroll>
+
+            {/* Google Sheets */}
+            <FadeInOnScroll delay={300}>
+              <div className="flex flex-col items-center group">
+                <div className="relative">
+                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
+                    <img 
+                      src="https://cdn.simpleicons.org/googlesheets/34A853" 
+                      alt="Google Sheets" 
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent && !parent.querySelector('.fallback-text')) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'fallback-text text-slate-700 font-bold text-sm';
+                          fallback.textContent = 'Google Sheets';
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    Soon
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 font-medium">Google Sheets</p>
+              </div>
+            </FadeInOnScroll>
+          </div>
+
+          <FadeInOnScroll delay={400}>
+            <p className="text-center mt-8 text-sm text-slate-500">
+              Auto-sync call results directly to your CRM or spreadsheet. No manual exports needed.
+            </p>
+          </FadeInOnScroll>
         </div>
       </section>
 
