@@ -32,7 +32,7 @@ type Organization = {
   callsUsed?: number;
   minutesUsed?: number;
 };
-/** Team members: userId -> { id, email, name, role, orgId, status, invitedAt, lastActive } */
+/** Team members: userId -> { id, email, name, role, orgId, status, invitedAt, lastActive, updatedAt } */
 type TeamMember = {
   id: string;
   email: string;
@@ -42,6 +42,7 @@ type TeamMember = {
   status: "active" | "invited" | "suspended";
   invitedAt?: string;
   lastActive?: string;
+  updatedAt?: string;
 };
 /** Invitations: token -> { token, email, role, orgId, invitedBy, createdAt, expiresAt, accepted } */
 type Invitation = {
