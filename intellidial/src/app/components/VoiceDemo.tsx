@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
-import { Mic, Loader2, PhoneOff, Mail, Calendar, MessageCircle } from "lucide-react";
+import { useState, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
+import { Mic, Loader2, PhoneOff } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 
 const WAVE_BAR_COUNT = 48;
@@ -25,14 +25,16 @@ const CONNECTING_MESSAGES = [
  * Voice demo: one button starts the call. Volume-reactive wave, live transcript, email + Book CTA.
  * Creds from doctor .env via /api/demo-assistant.
  */
-export function VoiceDemo() {
+export interface VoiceDemoRef {
+  startDemo: () => void;
+}
+
+export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [callActive, setCallActive] = useState(false);
   const [transcript, setTranscript] = useState<{ role: string; text: string }[]>([]);
   const [volumeLevel, setVolumeLevel] = useState(0);
-  const [email, setEmail] = useState("");
-  const [bookSubmitted, setBookSubmitted] = useState(false);
   const [connectingMessageIndex, setConnectingMessageIndex] = useState(0);
   const vapiRef = useRef<Vapi | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -158,6 +160,10 @@ export function VoiceDemo() {
     }
   }, []);
 
+  useImperativeHandle(ref, () => ({
+    startDemo,
+  }));
+
   const endCall = useCallback(() => {
     if (vapiRef.current) {
       vapiRef.current.stop();
@@ -166,12 +172,6 @@ export function VoiceDemo() {
     setCallActive(false);
     setVolumeLevel(0);
   }, []);
-
-  const handleBookCall = useCallback(() => {
-    if (!email.trim()) return;
-    setBookSubmitted(true);
-    window.open(`mailto:hello@intellidial.co.za?subject=Book a call - ${encodeURIComponent(email)}&body=Email: ${encodeURIComponent(email)}`, "_blank");
-  }, [email]);
 
   useEffect(() => {
     return () => {
@@ -227,14 +227,19 @@ export function VoiceDemo() {
 
         <div className="relative z-10 p-8 flex flex-col items-center gap-5">
           {!callActive && !connecting && (
-            <button
-              type="button"
-              onClick={startDemo}
-              className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.03] active:scale-[0.98] border border-white/20"
-            >
-              <Mic className="w-5 h-5" />
-              Talk to our AI
-            </button>
+            <div className="relative">
+              {/* Pulsing ring effect */}
+              <div className="absolute inset-0 rounded-xl bg-teal-400/30 animate-ping opacity-75" style={{ animationDuration: '2s' }}></div>
+              <div className="absolute inset-0 rounded-xl bg-cyan-400/20 animate-ping opacity-50" style={{ animationDuration: '2s', animationDelay: '0.5s' }}></div>
+              <button
+                type="button"
+                onClick={startDemo}
+                className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.05] active:scale-[0.98] border border-white/20 animate-heartbeat cursor-pointer shadow-lg shadow-teal-400/30"
+              >
+                <Mic className="w-5 h-5 relative z-10" />
+                <span className="relative z-10">Talk to our AI</span>
+              </button>
+            </div>
           )}
         {connecting && (
           <div className="flex items-center justify-center gap-3 min-h-[2.5rem] px-5 py-3 rounded-xl bg-slate-900/70 border border-teal-500/20 shadow-lg shadow-teal-500/10">
@@ -282,42 +287,6 @@ export function VoiceDemo() {
               </div>
             )}
 
-            {/* Email + Book a call / Enterprise chat — conversion CTA */}
-            <div className="w-full mt-2 p-4 rounded-xl bg-slate-900/60 border border-teal-500/25 backdrop-blur-sm">
-              <p className="text-slate-300 text-xs font-medium mb-3 uppercase tracking-wider">Book a call or start enterprise chat</p>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="email"
-                    placeholder="your@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-lg bg-slate-800 border border-white/10 text-white placeholder-slate-400 focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 outline-none transition-all"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleBookCall}
-                    disabled={!email.trim()}
-                    className="inline-flex items-center gap-2 bg-teal-500 hover:bg-teal-400 disabled:opacity-50 disabled:cursor-not-allowed text-slate-900 px-5 py-3 rounded-lg font-semibold transition-all"
-                  >
-                    <Calendar className="w-4 h-4" />
-                    {bookSubmitted ? "Opened" : "Book a call"}
-                  </button>
-                  <a
-                    href="https://wa.me/27XXXXXXXXX?text=Hi%2C%20I'm%20interested%20in%20Intellidial"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-5 py-3 rounded-lg font-medium transition-all border border-white/10"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    Enterprise chat
-                  </a>
-                </div>
-              </div>
-            </div>
           </div>
         )}
         {error && <p className="text-sm text-red-400 text-center">{error}</p>}
@@ -325,4 +294,6 @@ export function VoiceDemo() {
       </div>
     </div>
   );
-}
+});
+
+VoiceDemo.displayName = "VoiceDemo";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { VoiceDemo } from "./components/VoiceDemo";
+import { VoiceDemo, VoiceDemoRef } from "./components/VoiceDemo";
 import { LoginModal } from "./components/LoginModal";
 import {
   Phone,
@@ -29,11 +29,13 @@ import {
   CheckCircle2,
   Wallet,
   CalendarCheck,
+  Calendar,
   Server,
   ShieldCheck,
   Settings,
   FileAudio,
   Scale,
+  FileText,
 } from "lucide-react";
 
 // Animated counter hook
@@ -113,6 +115,9 @@ export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [demoEmail, setDemoEmail] = useState("");
+  const [demoSubmitted, setDemoSubmitted] = useState(false);
+  const voiceDemoRef = useRef<VoiceDemoRef>(null);
   const [scrolled, setScrolled] = useState(false);
 
   // Scroll effect for nav
@@ -266,16 +271,18 @@ export default function LandingPage() {
             </FadeInOnScroll>
 
             <FadeInOnScroll delay={200}>
-              <p className="mt-6 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto">
-                We call your list, ask your questions, and return Excel + recordings instantly.
-                No manual dialling — just structured data.
+              <p className="mt-6 text-lg sm:text-xl lg:text-2xl text-slate-700 leading-relaxed max-w-3xl mx-auto font-medium">
+                Our Agentic Workforce understands your context, calls your contact list, and asks your questions with natural human flow.
+                <span className="block mt-3 text-slate-600 font-normal">
+                  Scale from 10 to 10,000 calls simultaneously. Get recordings, transcripts, and structured tabular data instantly — no manual dialling or hiring required.
+                </span>
               </p>
             </FadeInOnScroll>
 
             <FadeInOnScroll delay={300}>
               <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
                 <a
-                  href="#contact"
+                  href="#pricing"
                   className="group font-display bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:from-teal-500 hover:to-cyan-500 transition-all shadow-xl shadow-teal-600/25 hover:shadow-[0_0_40px_rgba(20,184,166,0.4)] hover:-translate-y-1 flex items-center justify-center gap-2 border border-white/20"
                 >
                   Start Free Pilot
@@ -296,18 +303,52 @@ export default function LandingPage() {
           <FadeInOnScroll delay={350}>
             <div className="mt-14 md:mt-16 max-w-2xl mx-auto">
               <div className="text-center mb-6">
-                <div className="inline-flex items-center gap-2 border-2 border-teal-400/80 text-teal-700 px-4 py-2 rounded-full text-sm font-bold mb-3 bg-teal-50/90">
+                <button
+                  onClick={() => voiceDemoRef.current?.startDemo()}
+                  className="inline-flex items-center gap-2 border-2 border-teal-400/80 text-teal-700 px-4 py-2 rounded-full text-sm font-bold mb-3 bg-teal-50/90 hover:bg-teal-100/90 hover:border-teal-500 transition-all cursor-pointer"
+                >
                   <Play className="w-4 h-4 fill-teal-600 text-teal-600" />
                   Live Demo
-                </div>
+                </button>
                 <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-2">
                   Talk to our AI
                 </h2>
                 <p className="text-slate-600 text-sm sm:text-base mt-1 max-w-lg mx-auto">
-                  Ask about pricing, use cases, or how it works — then book a call or enter your email below
+                  Ask about pricing, use cases, or how it works — <span className="font-semibold text-teal-600">click below to start</span>
                 </p>
               </div>
-              <VoiceDemo />
+              <VoiceDemo ref={voiceDemoRef} />
+              
+              {/* Book Demo Now section */}
+              <div className="mt-6 p-5 rounded-xl bg-gradient-to-br from-teal-50/50 to-cyan-50/50 border border-teal-100/50 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-800 mb-3 text-center">Book Demo Now</h3>
+                <div className="flex flex-col sm:flex-row gap-2.5 max-w-md mx-auto">
+                  <div className="flex-1 relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input
+                      type="email"
+                      placeholder="your@company.com"
+                      value={demoEmail || ""}
+                      onChange={(e) => setDemoEmail(e.target.value || "")}
+                      className="w-full pl-10 pr-3 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 focus:border-teal-400 focus:ring-1 focus:ring-teal-400/20 outline-none transition-all bg-white text-sm"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (demoEmail.trim()) {
+                        setDemoSubmitted(true);
+                        window.open(`mailto:hello@intellidial.co.za?subject=Book a call - ${encodeURIComponent(demoEmail)}&body=Email: ${encodeURIComponent(demoEmail)}`, "_blank");
+                      }
+                    }}
+                    disabled={!demoEmail.trim()}
+                    className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 text-white px-7 py-3 rounded-lg font-bold text-base hover:from-teal-500 hover:via-teal-400 hover:to-cyan-500 transition-all shadow-lg shadow-teal-500/30 hover:shadow-xl hover:shadow-teal-500/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-lg animate-glisten overflow-hidden"
+                  >
+                    <Calendar className="w-4 h-4 relative z-10" />
+                    <span className="relative z-10">{demoSubmitted ? "Opened" : "Book Demo"}</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </FadeInOnScroll>
 
@@ -418,7 +459,8 @@ export default function LandingPage() {
                   </div>
                   <h3 className="text-xl font-bold text-slate-900 mb-3">Upload or We Generate</h3>
                   <p className="text-slate-600">
-                    Have a list? Upload it. Don't have one? <span className="text-teal-600 font-medium">We'll build it for you</span> using Google Places API.
+                    Have a list? Upload it. Or connect your CRM (HubSpot, Salesforce) to sync contacts automatically. 
+                    Don't have one? <span className="text-teal-600 font-medium">We'll build it for you</span> using Google Places API.
                     Just tell us what businesses to find.
                   </p>
                 </div>
@@ -463,8 +505,8 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-3">Get Structured Data</h3>
                 <p className="text-slate-600">
-                  Receive an Excel file with extracted answers, full transcripts, and audio recordings.
-                  Ready for analysis.
+                  Receive extracted answers, full transcripts, and audio recordings. Export to Excel, sync to Google Sheets, 
+                  or drop files directly to your cloud provider (AWS S3, Azure Blob, GCP Storage).
                 </p>
               </div>
             </FadeInOnScroll>
@@ -612,100 +654,93 @@ export default function LandingPage() {
             </div>
           </FadeInOnScroll>
 
-          <div className="flex flex-wrap items-center justify-center gap-8 md:gap-12">
-            {/* HubSpot */}
-            <FadeInOnScroll delay={100}>
-              <div className="flex flex-col items-center group">
-                <div className="relative">
-                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
-                    <img 
-                      src="https://cdn.simpleicons.org/hubspot/FF7A59" 
-                      alt="HubSpot" 
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        // Fallback to text if image fails
-                        e.currentTarget.style.display = 'none';
-                        const parent = e.currentTarget.parentElement;
-                        if (parent && !parent.querySelector('.fallback-text')) {
-                          const fallback = document.createElement('div');
-                          fallback.className = 'fallback-text text-slate-700 font-bold text-lg';
-                          fallback.textContent = 'HubSpot';
-                          parent.appendChild(fallback);
-                        }
-                      }}
-                    />
+          <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8 lg:gap-10">
+            {/* Integration Component */}
+            {[
+              { name: "HubSpot", logo: "https://cdn.simpleicons.org/hubspot/FF7A59", delay: 100 },
+              { 
+                name: "Salesforce", 
+                logo: "https://mitto.ch/wp-content/uploads/2024/01/salesforce@2x-8-1.png",
+                fallback: "SF",
+                delay: 200 
+              },
+              { name: "Google Sheets", logo: "https://cdn.simpleicons.org/googlesheets/34A853", delay: 300 },
+              { name: "GCP", logo: "https://www.meshcloud.io/wp-content/uploads/2022/08/googlecloud.svg", delay: 400 },
+              { name: "Azure", logo: "https://azure.microsoft.com/svghandler/azure-logo/Azure-Logo.svg", delay: 500 },
+              { name: "AWS", logo: "https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg", delay: 600 },
+              { name: "Airtable", logo: "https://cdn.simpleicons.org/airtable/18BFFF", delay: 700 },
+              { name: "Zapier", logo: "https://cdn.simpleicons.org/zapier/FF4A00", delay: 800 },
+            ].map((integration, idx) => (
+              <FadeInOnScroll key={integration.name} delay={integration.delay}>
+                <div className="flex flex-col items-center group">
+                  <div className="relative">
+                    <div className={`w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center ${integration.name === 'Salesforce' ? 'p-0' : 'p-3 sm:p-4'} group-hover:shadow-lg transition-shadow overflow-hidden`}>
+                      {integration.fallback ? (
+                        // Salesforce with SVG fallback
+                        <img 
+                          src={integration.logo}
+                          alt={integration.name}
+                          className={`${integration.name === 'Salesforce' ? 'w-[180%] h-[180%] object-contain' : 'w-full h-full object-contain'}`}
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && !parent.querySelector('.fallback-text')) {
+                              const fallback = document.createElement('div');
+                              fallback.className = 'fallback-text text-slate-700 font-bold text-sm sm:text-lg flex items-center justify-center w-full h-full';
+                              fallback.textContent = integration.fallback;
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <img 
+                          src={integration.logo}
+                          alt={integration.name}
+                          className="w-full h-full object-contain"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && !parent.querySelector('.fallback-text')) {
+                              const fallback = document.createElement('div');
+                              fallback.className = 'fallback-text text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center w-full h-full text-center px-1';
+                              fallback.textContent = integration.name.split(' ')[0];
+                              parent.appendChild(fallback);
+                            }
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                      Soon
+                    </div>
                   </div>
-                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                    Soon
-                  </div>
+                  <p className="mt-2 text-xs sm:text-sm text-slate-600 font-medium text-center max-w-[80px] sm:max-w-none">
+                    {integration.name}
+                  </p>
                 </div>
-                <p className="mt-2 text-sm text-slate-600 font-medium">HubSpot</p>
-              </div>
-            </FadeInOnScroll>
-
-            {/* Salesforce */}
-            <FadeInOnScroll delay={200}>
-              <div className="flex flex-col items-center group">
-                <div className="relative">
-                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
-                    <img 
-                      src="https://cdn.simpleicons.org/salesforce/00A1E0" 
-                      alt="Salesforce" 
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const parent = e.currentTarget.parentElement;
-                        if (parent && !parent.querySelector('.fallback-text')) {
-                          const fallback = document.createElement('div');
-                          fallback.className = 'fallback-text text-slate-700 font-bold text-lg';
-                          fallback.textContent = 'Salesforce';
-                          parent.appendChild(fallback);
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                    Soon
-                  </div>
-                </div>
-                <p className="mt-2 text-sm text-slate-600 font-medium">Salesforce</p>
-              </div>
-            </FadeInOnScroll>
-
-            {/* Google Sheets */}
-            <FadeInOnScroll delay={300}>
-              <div className="flex flex-col items-center group">
-                <div className="relative">
-                  <div className="w-24 h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center p-4 group-hover:shadow-lg transition-shadow">
-                    <img 
-                      src="https://cdn.simpleicons.org/googlesheets/34A853" 
-                      alt="Google Sheets" 
-                      className="w-full h-full object-contain"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const parent = e.currentTarget.parentElement;
-                        if (parent && !parent.querySelector('.fallback-text')) {
-                          const fallback = document.createElement('div');
-                          fallback.className = 'fallback-text text-slate-700 font-bold text-sm';
-                          fallback.textContent = 'Google Sheets';
-                          parent.appendChild(fallback);
-                        }
-                      }}
-                    />
-                  </div>
-                  <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                    Soon
-                  </div>
-                </div>
-                <p className="mt-2 text-sm text-slate-600 font-medium">Google Sheets</p>
-              </div>
-            </FadeInOnScroll>
+              </FadeInOnScroll>
+            ))}
           </div>
 
-          <FadeInOnScroll delay={400}>
-            <p className="text-center mt-8 text-sm text-slate-500">
-              Auto-sync call results directly to your CRM or spreadsheet. No manual exports needed.
-            </p>
+          <FadeInOnScroll delay={900}>
+            <div className="text-center mt-10">
+              <p className="text-sm text-slate-500 mb-6">
+                Auto-sync call results directly to your CRM or spreadsheet. No manual exports needed.
+              </p>
+              <button
+                onClick={() => {
+                  window.open(`mailto:hello@intellidial.co.za?subject=Integration Waitlist - ${encodeURIComponent('I want early access to integrations')}&body=${encodeURIComponent('Hi,\n\nI\'d like to be notified when these integrations are available:\n\n- [ ] HubSpot\n- [ ] Salesforce\n- [ ] Google Sheets\n- [ ] GCP\n- [ ] Azure\n- [ ] AWS\n- [ ] Airtable\n- [ ] Zapier\n\nThanks!')}`, '_blank');
+                }}
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Join Waitlist
+              </button>
+            </div>
           </FadeInOnScroll>
         </div>
       </section>
@@ -987,6 +1022,12 @@ export default function LandingPage() {
           <div className="flex flex-nowrap items-center justify-center gap-x-4 sm:gap-x-6 overflow-x-auto text-sm">
             <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
+                <FileText className="h-4 w-4 text-teal-600" />
+              </span>
+              NDA
+            </span>
+            <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
                 <ShieldCheck className="h-4 w-4 text-teal-600" />
               </span>
               GDPR compliant
@@ -1007,7 +1048,7 @@ export default function LandingPage() {
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
                 <Lock className="h-4 w-4 text-teal-600" />
               </span>
-              Encrypted in transit & at rest
+              Encryption
             </span>
             <span className="flex items-center gap-2 shrink-0 text-slate-700 font-medium">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500/10">
@@ -1022,9 +1063,9 @@ export default function LandingPage() {
       {/* Footer */}
       <footer className="bg-slate-900 text-slate-400 py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+          <div className="mb-12">
             {/* Logo & Description */}
-            <div className="sm:col-span-2 md:col-span-2">
+            <div className="max-w-md">
               <div className="flex items-center gap-2 mb-4">
                 <a 
                   href="/" 
@@ -1040,66 +1081,11 @@ export default function LandingPage() {
                   Intelli<span className="text-teal-400">dial</span>
                 </span>
               </div>
-              <p className="text-slate-400 mb-4 max-w-sm">
+              <p className="text-slate-400 mb-4 max-w-sm text-sm">
                 AI-powered phone research at scale. We call hundreds of businesses,
                 ask your questions, and deliver structured data.
               </p>
-              <p className="text-sm">Made with ❤️ in Cape Town, South Africa 🇿🇦</p>
-            </div>
-
-            {/* Links */}
-            <div>
-              <h4 className="font-semibold text-white mb-4">Product</h4>
-              <ul className="space-y-3">
-                <li>
-                  <a href="#how-it-works" className="hover:text-teal-400 transition-colors">
-                    How it Works
-                  </a>
-                </li>
-                <li>
-                  <a href="#use-cases" className="hover:text-teal-400 transition-colors">
-                    Use Cases
-                  </a>
-                </li>
-                <li>
-                  <a href="#pricing" className="hover:text-teal-400 transition-colors">
-                    Pricing
-                  </a>
-                </li>
-                <li>
-                  <a href="#faq" className="hover:text-teal-400 transition-colors">
-                    FAQ
-                  </a>
-                </li>
-              </ul>
-            </div>
-
-            {/* Contact */}
-            <div>
-              <h4 className="font-semibold text-white mb-4">Contact</h4>
-              <ul className="space-y-3">
-                <li>
-                  <a
-                    href="mailto:hello@intellidial.co.za"
-                    className="hover:text-teal-400 transition-colors"
-                  >
-                    hello@intellidial.co.za
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="https://wa.me/27XXXXXXXXX"
-                    className="hover:text-teal-400 transition-colors"
-                  >
-                    WhatsApp
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="hover:text-teal-400 transition-colors">
-                    LinkedIn
-                  </a>
-                </li>
-              </ul>
+              <p className="text-xs">Made with ❤️ in Cape Town, South Africa 🇿🇦</p>
             </div>
           </div>
 
