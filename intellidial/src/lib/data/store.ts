@@ -6,7 +6,7 @@
  * Falls back to in-memory storage if Firebase is not available.
  */
 
-import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField } from "@/lib/firebase/types";
+import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS } from "@/lib/firebase/types";
@@ -39,7 +39,7 @@ type TeamMember = {
   name?: string;
   role: "owner" | "admin" | "operator" | "viewer";
   orgId: string;
-  status: "active" | "invited";
+  status: "active" | "invited" | "suspended";
   invitedAt?: string;
   lastActive?: string;
 };
@@ -60,6 +60,8 @@ const contacts = new Map<string, ContactWithId>();
 const projectContacts = new Map<string, string[]>();
 /** Project call queue: contact IDs to call next (in order) */
 const projectQueue = new Map<string, Set<string>>();
+/** Scheduled call times per contact: projectId -> contactId -> scheduledTime (HH:mm) */
+const contactScheduledTimes = new Map<string, Map<string, string>>();
 
 /** Organizations: orgId -> Organization */
 const organizations = new Map<string, Organization>();
@@ -73,8 +75,11 @@ const emailToUserId = new Map<string, string>();
 const invitations = new Map<string, Invitation>();
 /** Email to invitation token mapping (for quick lookup) */
 const emailToInvitationToken = new Map<string, string>();
+/** Notifications: notificationId -> NotificationDoc */
+const notifications = new Map<string, NotificationDoc & { id: string }>();
 
 let contactIdCounter = 0;
+let notificationIdCounter = 0;
 let orgIdCounter = 0;
 let userIdCounter = 0;
 
@@ -770,14 +775,48 @@ export function getProjectQueue(projectId: string): string[] {
   return Array.from(projectQueue.get(projectId) ?? []);
 }
 
-export function setProjectQueue(projectId: string, contactIds: string[], add: boolean): void {
+export function getContactScheduledTime(projectId: string, contactId: string): string | null {
+  return contactScheduledTimes.get(projectId)?.get(contactId) ?? null;
+}
+
+export function setProjectQueue(
+  projectId: string, 
+  contactIds: string[], 
+  add: boolean,
+  scheduledTimes?: Array<{ contactId: string; scheduledTime: string | null }>
+): void {
   const queueSet = projectQueue.get(projectId) ?? new Set<string>();
-  for (const cid of contactIds) {
-    if (add) queueSet.add(cid);
-    else queueSet.delete(cid);
+  let projectScheduledTimes = contactScheduledTimes.get(projectId);
+  if (!projectScheduledTimes) {
+    projectScheduledTimes = new Map();
+    contactScheduledTimes.set(projectId, projectScheduledTimes);
   }
-  if (queueSet.size === 0) projectQueue.delete(projectId);
-  else projectQueue.set(projectId, queueSet);
+  
+  for (const cid of contactIds) {
+    if (add) {
+      queueSet.add(cid);
+      // Set scheduled time if provided
+      if (scheduledTimes) {
+        const scheduled = scheduledTimes.find(st => st.contactId === cid);
+        if (scheduled) {
+          if (scheduled.scheduledTime) {
+            projectScheduledTimes.set(cid, scheduled.scheduledTime);
+          } else {
+            projectScheduledTimes.delete(cid);
+          }
+        }
+      }
+    } else {
+      queueSet.delete(cid);
+      projectScheduledTimes.delete(cid);
+    }
+  }
+  if (queueSet.size === 0) {
+    projectQueue.delete(projectId);
+    contactScheduledTimes.delete(projectId);
+  } else {
+    projectQueue.set(projectId, queueSet);
+  }
 }
 
 /** Load contacts for a project from Firestore into in-memory store. Called when listContacts finds none in memory. */
@@ -1672,6 +1711,41 @@ export async function updateTeamMemberRole(
  * Remove a team member or cancel an invitation.
  * memberId is either Firebase uid (active) or invitation token (invited).
  */
+export async function suspendTeamMember(orgId: string, memberId: string, suspend: boolean): Promise<boolean> {
+  const newStatus = suspend ? "suspended" : "active";
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const ref = db
+        .collection(COLLECTIONS.organizations)
+        .doc(orgId)
+        .collection("members")
+        .doc(memberId);
+      const doc = await ref.get();
+      if (doc.exists) {
+        await ref.update({ status: newStatus, updatedAt: now() });
+        const member = teamMembers.get(memberId);
+        if (member) {
+          member.status = newStatus as "active" | "invited" | "suspended";
+          member.updatedAt = now();
+          teamMembers.set(memberId, member);
+        }
+        return true;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to suspend member in Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  const member = teamMembers.get(memberId);
+  if (member && member.orgId === orgId) {
+    member.status = newStatus as "active" | "invited" | "suspended";
+    member.updatedAt = now();
+    teamMembers.set(memberId, member);
+    return true;
+  }
+  return false;
+}
+
 export async function removeTeamMember(orgId: string, memberId: string): Promise<boolean> {
   if (memberId.startsWith("inv_")) {
     // Invited member - delete from members and invitations
@@ -1766,4 +1840,187 @@ export function deleteInvitation(token: string): boolean {
   }
 
   return true;
+}
+
+/**
+ * Create a notification for a user.
+ */
+export async function createNotification(
+  orgId: string,
+  userId: string,
+  type: NotificationDoc["type"],
+  title: string,
+  message: string,
+  metadata?: NotificationDoc["metadata"]
+): Promise<string> {
+  const notificationId = `notif-${++notificationIdCounter}`;
+  const notification: NotificationDoc & { id: string } = {
+    id: notificationId,
+    orgId,
+    userId,
+    type,
+    title,
+    message,
+    read: false,
+    createdAt: now(),
+    ...(metadata ? { metadata } : {}),
+  };
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.notifications).doc(notificationId).set(notification);
+    } catch (error) {
+      console.warn("[Store] Failed to create notification in Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  notifications.set(notificationId, notification);
+  return notificationId;
+}
+
+/**
+ * Get notifications for a user.
+ */
+export async function getNotifications(
+  userId: string,
+  options?: { limit?: number; type?: NotificationDoc["type"]; read?: boolean }
+): Promise<Array<NotificationDoc & { id: string }>> {
+  const limit = options?.limit ?? 100;
+  const typeFilter = options?.type;
+  const readFilter = options?.read;
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      let query = db.collection(COLLECTIONS.notifications).where("userId", "==", userId);
+      
+      if (readFilter !== undefined) {
+        query = query.where("read", "==", readFilter);
+      }
+      if (typeFilter) {
+        query = query.where("type", "==", typeFilter);
+      }
+      
+      query = query.orderBy("createdAt", "desc").limit(limit);
+      const snap = await query.get();
+      
+      const result: Array<NotificationDoc & { id: string }> = [];
+      snap.forEach((doc) => {
+        const data = doc.data();
+        const notif: NotificationDoc & { id: string } = {
+          id: doc.id,
+          orgId: data.orgId,
+          userId: data.userId,
+          type: data.type,
+          title: data.title,
+          message: data.message,
+          read: data.read ?? false,
+          createdAt: data.createdAt,
+          readAt: data.readAt,
+          metadata: data.metadata,
+        };
+        result.push(notif);
+        notifications.set(doc.id, notif);
+      });
+      return result;
+    } catch (error) {
+      console.warn("[Store] Failed to fetch notifications from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  // In-memory fallback
+  const all = Array.from(notifications.values())
+    .filter((n) => n.userId === userId)
+    .filter((n) => readFilter === undefined || n.read === readFilter)
+    .filter((n) => !typeFilter || n.type === typeFilter)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, limit);
+  return all;
+}
+
+/**
+ * Mark a notification as read.
+ */
+export async function markNotificationRead(notificationId: string, userId: string): Promise<boolean> {
+  const notification = notifications.get(notificationId);
+  if (!notification || notification.userId !== userId) {
+    return false;
+  }
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.notifications).doc(notificationId).update({
+        read: true,
+        readAt: now(),
+      });
+    } catch (error) {
+      console.warn("[Store] Failed to mark notification as read in Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  notification.read = true;
+  notification.readAt = now();
+  notifications.set(notificationId, notification);
+  return true;
+}
+
+/**
+ * Mark all notifications as read for a user.
+ */
+export async function markAllNotificationsRead(userId: string): Promise<number> {
+  const userNotifications = Array.from(notifications.values()).filter((n) => n.userId === userId && !n.read);
+  let count = 0;
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const batch = db.batch();
+      const readAt = now();
+      
+      for (const notif of userNotifications) {
+        const ref = db.collection(COLLECTIONS.notifications).doc(notif.id);
+        batch.update(ref, { read: true, readAt });
+        notif.read = true;
+        notif.readAt = readAt;
+        notifications.set(notif.id, notif);
+        count++;
+      }
+      
+      if (count > 0) {
+        await batch.commit();
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to mark all notifications as read in Firestore:", error instanceof Error ? error.message : error);
+    }
+  } else {
+    const readAt = now();
+    for (const notif of userNotifications) {
+      notif.read = true;
+      notif.readAt = readAt;
+      notifications.set(notif.id, notif);
+      count++;
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Create notifications for all team members in an org.
+ */
+export async function createNotificationForOrg(
+  orgId: string,
+  type: NotificationDoc["type"],
+  title: string,
+  message: string,
+  metadata?: NotificationDoc["metadata"]
+): Promise<void> {
+  const members = await getTeamMembers(orgId);
+  for (const member of members) {
+    if (member.status === "active") {
+      await createNotification(orgId, member.id, type, title, message, metadata);
+    }
+  }
 }

@@ -116,7 +116,7 @@ export type TeamMemberDoc = {
   email: string;
   name?: string | null;
   role: "owner" | "admin" | "operator" | "viewer";
-  status: "active" | "invited";
+  status: "active" | "invited" | "suspended";
   invitedAt?: string; // ISO
   lastActive?: string; // ISO
 };
@@ -132,6 +132,35 @@ export type InvitationDoc = {
   accepted: boolean;
 };
 
+/** Firestore: notifications (collection). */
+export type NotificationDoc = {
+  orgId: string;
+  userId: string; // recipient user ID
+  type: "call_completed" | "call_failed" | "data_missing" | "project_complete" | "usage_warning";
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string; // ISO
+  readAt?: string; // ISO
+  metadata?: {
+    projectId?: string;
+    projectName?: string;
+    contactId?: string;
+    contactPhone?: string;
+    contactName?: string;
+    callId?: string;
+    durationSeconds?: number;
+    failureReason?: string;
+    missingFields?: string[];
+    capturedData?: Record<string, string | number | null>;
+    transcript?: string;
+    recordingUrl?: string;
+    callsMade?: number;
+    successfulCalls?: number;
+    failedCalls?: number;
+  };
+};
+
 /** Collection names */
 export const COLLECTIONS = {
   users: "users",
@@ -139,4 +168,5 @@ export const COLLECTIONS = {
   contacts: "contacts",
   organizations: "organizations",
   invitations: "invitations",
+  notifications: "notifications",
 } as const;

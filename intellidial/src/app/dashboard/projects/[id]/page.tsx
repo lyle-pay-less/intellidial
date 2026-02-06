@@ -27,6 +27,7 @@ import {
   Target,
   MessageCircle,
 } from "lucide-react";
+import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import {
   PieChart,
   Pie,
@@ -47,6 +48,7 @@ import type {
   CaptureField,
   AgentQuestion,
 } from "@/lib/firebase/types";
+import { TestAgent } from "@/app/components/TestAgent";
 
 type ProjectWithId = ProjectDoc & { id: string };
 type ContactWithId = ContactDoc & { id: string };
@@ -75,7 +77,7 @@ export default function ProjectDetailPage() {
     [user?.uid]
   );
   const [project, setProject] = useState<ProjectWithId | null>(null);
-  const [contacts, setContacts] = useState<ContactWithId[]>([]);
+  const [contacts, setContacts] = useState<Array<ContactWithId & { scheduledTime?: string | null }>>([]);
   const [totalContacts, setTotalContacts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -150,7 +152,7 @@ export default function ProjectDetailPage() {
   if (loading && !project) {
     return (
       <div className="flex min-h-[200px] items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <IntelliDialLoader />
       </div>
     );
   }
@@ -331,6 +333,7 @@ function OverviewTab({
     minutesByDay: Array<{ date: string; label: string; minutes: number }>;
   } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [pieOutcomes, setPieOutcomes] = useState({ success: 0, failed: 0 });
   const [notifyOnComplete, setNotifyOnComplete] = useState(
     project.notifyOnComplete ?? false
   );
@@ -350,6 +353,24 @@ function OverviewTab({
       .then((data) => setStats(data))
       .finally(() => setStatsLoading(false));
   }, [projectId, authHeaders]);
+
+  // When stats load, delay pie values so chart animates from 0 to final
+  useEffect(() => {
+    if (!stats || stats.callsMade === 0) {
+      setPieOutcomes({ success: 0, failed: 0 });
+      return;
+    }
+    setPieOutcomes({ success: 0, failed: 0 });
+    const t = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setPieOutcomes({
+          success: stats.successfulCalls,
+          failed: stats.unsuccessfulCalls,
+        });
+      });
+    });
+    return () => cancelAnimationFrame(t);
+  }, [stats?.successfulCalls, stats?.unsuccessfulCalls, stats?.callsMade]);
 
   const handleRun = async () => {
     setRunning(true);
@@ -392,7 +413,7 @@ function OverviewTab({
         )}
       {statsLoading ? (
         <div className="flex min-h-[200px] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+          <IntelliDialLoader />
         </div>
       ) : stats ? (
         <>
@@ -466,16 +487,20 @@ function OverviewTab({
                       <PieChart>
                         <Pie
                           data={[
-                            { name: "Successful", value: stats.successfulCalls, color: CHART_COLORS.success },
-                            { name: "Failed", value: stats.unsuccessfulCalls, color: CHART_COLORS.failed },
+                            { name: "Successful", value: pieOutcomes.success, color: CHART_COLORS.success },
+                            { name: "Failed", value: pieOutcomes.failed, color: CHART_COLORS.failed },
                           ]}
                           cx="50%" cy="50%" innerRadius={72} outerRadius={110}
                           paddingAngle={2} dataKey="value"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          isAnimationActive={true}
+                          animationBegin={0}
+                          animationDuration={1000}
+                          animationEasing="ease-out"
+                          label={({ name, percent }) => (percent > 0 ? `${name} ${(percent * 100).toFixed(0)}%` : "")}
                         >
                           {[
-                            { name: "Successful", value: stats.successfulCalls, color: CHART_COLORS.success },
-                            { name: "Failed", value: stats.unsuccessfulCalls, color: CHART_COLORS.failed },
+                            { name: "Successful", value: pieOutcomes.success, color: CHART_COLORS.success },
+                            { name: "Failed", value: pieOutcomes.failed, color: CHART_COLORS.failed },
                           ].map((entry, i) => (
                             <Cell key={i} fill={entry.color} />
                           ))}
@@ -908,7 +933,7 @@ function QueueTab({
   onRun: () => Promise<void>;
   onUpdate: () => void;
 }) {
-  const [contacts, setContacts] = useState<ContactWithId[]>([]);
+  const [contacts, setContacts] = useState<Array<ContactWithId & { scheduledTime?: string | null }>>([]);
   const [total, setTotal] = useState(0);
   const [queueIds, setQueueIds] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
@@ -919,6 +944,9 @@ function QueueTab({
     project.callWindowEnd ?? "17:00"
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedScheduledTimes, setSelectedScheduledTimes] = useState<Map<string, string>>(new Map());
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [bulkScheduleTime, setBulkScheduleTime] = useState("");
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [callingNowId, setCallingNowId] = useState<string | null>(null);
@@ -1075,25 +1103,75 @@ function QueueTab({
   const selectAllOnPage = () => {
     if (selected.size === contacts.length) {
       setSelected(new Set());
+      setSelectedScheduledTimes(new Map());
     } else {
       setSelected(new Set(contacts.map((c) => c.id)));
     }
   };
 
-  const addToQueue = async () => {
+  const selectAllFiltered = async () => {
+    if (selected.size === total && total > 0) {
+      setSelected(new Set());
+      setSelectedScheduledTimes(new Map());
+      return;
+    }
+    // Fetch all contact IDs for the current filter
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/contacts?limit=10000&status=${statusFilter}&idsOnly=true`,
+        { headers: authHeaders }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const allIds = (data.contactIds ?? []) as string[];
+        setSelected(new Set(allIds));
+      }
+    } catch {
+      // Fallback to selecting all on current page
+      setSelected(new Set(contacts.map((c) => c.id)));
+    }
+  };
+
+  const addToQueue = async (scheduledTime?: string) => {
     if (selected.size === 0) return;
+    
+    // If scheduled time provided, show modal or use it
+    if (scheduledTime || bulkScheduleTime) {
+      const timeToUse = scheduledTime || bulkScheduleTime;
+      // Store scheduled times for selected contacts
+      const timesMap = new Map(selectedScheduledTimes);
+      Array.from(selected).forEach(id => {
+        if (!timesMap.has(id)) {
+          timesMap.set(id, timeToUse);
+        }
+      });
+      setSelectedScheduledTimes(timesMap);
+    }
+    
     setUpdating(true);
     try {
+      const scheduledTimes = Array.from(selected).map(id => ({
+        contactId: id,
+        scheduledTime: selectedScheduledTimes.get(id) || scheduledTime || bulkScheduleTime || null
+      }));
+      
       const res = await fetch(`/api/projects/${projectId}/queue`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
           ...authHeaders,
         },
-        body: JSON.stringify({ contactIds: Array.from(selected), add: true }),
+        body: JSON.stringify({ 
+          contactIds: Array.from(selected), 
+          add: true,
+          scheduledTimes: scheduledTimes.length > 0 ? scheduledTimes : undefined
+        }),
       });
       if (res.ok) {
         setSelected(new Set());
+        setSelectedScheduledTimes(new Map());
+        setBulkScheduleTime("");
+        setShowScheduleModal(false);
         fetchData();
       }
     } finally {
@@ -1290,26 +1368,51 @@ function QueueTab({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-slate-700">
+            {selected.size > 0 && `${selected.size} selected • `}
             {queueIds.size} in queue
           </span>
-          <button
-            type="button"
-            onClick={addToQueue}
-            disabled={selected.size === 0 || updating}
-            className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            Add selected to queue
-          </button>
-          <button
-            type="button"
-            onClick={removeFromQueue}
-            disabled={selected.size === 0 || updating}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            Remove selected from queue
-          </button>
-          {statusFilter === "pending" && contacts.length > 0 && (
+          {selected.size > 0 && (
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  disabled={updating}
+                  className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                >
+                  <Clock className="h-4 w-4" />
+                  Schedule & add to queue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addToQueue()}
+                  disabled={updating}
+                  className="flex items-center gap-2 rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add selected to queue
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={removeFromQueue}
+                disabled={updating}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Remove selected from queue
+              </button>
+            </>
+          )}
+          {total > contacts.length && (
+            <button
+              type="button"
+              onClick={selectAllFiltered}
+              className="flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              {selected.size === total ? "Deselect all" : `Select all ${total} filtered`}
+            </button>
+          )}
+          {statusFilter === "pending" && contacts.length > 0 && selected.size === 0 && (
             <button
               type="button"
               onClick={addAllFilteredToQueue}
@@ -1340,7 +1443,7 @@ function QueueTab({
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {loading ? (
           <div className="flex min-h-[120px] items-center justify-center p-8">
-            <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+            <IntelliDialLoader size="md" />
           </div>
         ) : contacts.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500">
@@ -1362,6 +1465,7 @@ function QueueTab({
                 <th className="px-4 py-3 text-left font-medium text-slate-700">Name</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-700">Status</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-700">In queue</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-700">Scheduled time</th>
                 <th className="px-4 py-3 text-right font-medium text-slate-700">Actions</th>
               </tr>
             </thead>
@@ -1403,6 +1507,29 @@ function QueueTab({
                       <span className="text-slate-300">—</span>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {selected.has(c.id) ? (
+                      <input
+                        type="time"
+                        value={selectedScheduledTimes.get(c.id) || c.scheduledTime || ""}
+                        onChange={(e) => {
+                          const newTimes = new Map(selectedScheduledTimes);
+                          if (e.target.value) {
+                            newTimes.set(c.id, e.target.value);
+                          } else {
+                            newTimes.delete(c.id);
+                          }
+                          setSelectedScheduledTimes(newTimes);
+                        }}
+                        placeholder="Schedule time"
+                        className="w-32 rounded border border-slate-200 px-2 py-1 text-xs text-slate-900 focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20 outline-none"
+                      />
+                    ) : c.scheduledTime ? (
+                      <span className="text-xs text-slate-600 font-medium">{c.scheduledTime}</span>
+                    ) : (
+                      <span className="text-slate-300 text-xs">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     {c.status === "calling" ? (
                       <span className="inline-flex items-center gap-1.5 text-xs text-amber-600">
@@ -1442,6 +1569,60 @@ function QueueTab({
           </table>
         )}
       </div>
+
+      {/* Schedule Time Modal */}
+      {showScheduleModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowScheduleModal(false);
+              setBulkScheduleTime("");
+            }
+          }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="mb-4 text-lg font-bold text-slate-900">Schedule Calls</h3>
+            <p className="mb-4 text-sm text-slate-600">
+              Set a time for {selected.size} selected contact{selected.size !== 1 ? "s" : ""} to be called.
+            </p>
+            <div className="mb-4">
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                Call at (HH:mm)
+              </label>
+              <input
+                type="time"
+                value={bulkScheduleTime}
+                onChange={(e) => setBulkScheduleTime(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Leave empty to use default call window ({callWindowStart} - {callWindowEnd})
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowScheduleModal(false);
+                  setBulkScheduleTime("");
+                }}
+                className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => addToQueue(bulkScheduleTime)}
+                disabled={updating}
+                className="flex-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                {updating ? "Adding..." : "Schedule & Add to Queue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1459,10 +1640,20 @@ const INDUSTRIES = [
 
 const AGENT_VOICES = [
   { value: "default", label: "Default (Rachel)" },
-  { value: "rachel", label: "Rachel" },
-  { value: "adam", label: "Adam" },
-  { value: "antoni", label: "Antoni" },
-  { value: "sam", label: "Sam" },
+  { value: "rachel", label: "Rachel - Clear & Professional" },
+  { value: "adam", label: "Adam - Professional" },
+  { value: "antoni", label: "Antoni - Warm & Friendly" },
+  { value: "sam", label: "Sam - Clear & Professional" },
+  { value: "bella", label: "Bella - Warm & Friendly" },
+  { value: "elli", label: "Elli - Young & Energetic" },
+  { value: "domi", label: "Domi - Authoritative" },
+  { value: "gigi", label: "Gigi - Calm & Soothing" },
+  { value: "grace", label: "Grace - Professional" },
+  { value: "jessi", label: "Jessi - Energetic" },
+  { value: "nicole", label: "Nicole - Conversational" },
+  { value: "sky", label: "Sky - Friendly" },
+  { value: "arnold", label: "Arnold - Authoritative" },
+  { value: "daniel", label: "Daniel - British Accent" },
 ] as const;
 
 function InstructionsTab({
@@ -1565,7 +1756,11 @@ function InstructionsTab({
     };
     if (type === "goal") body.goal = goal;
     if (type === "fieldNames") body.questions = agentQuestions;
-    else if (type === "script") body.questions = agentQuestions.map((q) => q.text);
+    else if (type === "script") {
+      body.questions = agentQuestions.map((q) => q.text);
+      body.agentName = agentName;
+      body.agentCompany = agentCompany;
+    }
     try {
       const res = await fetch(`/api/projects/${project.id}/generate`, {
         method: "POST",
@@ -1607,6 +1802,7 @@ function InstructionsTab({
           industry: industry === "other" ? industryOther : industry,
           count: 3,
           existing: agentQuestions.map((q) => q.text),
+          goal: goal,
         }),
       });
       if (!res.ok) {
@@ -2283,6 +2479,21 @@ function InstructionsTab({
           <span className="font-semibold">Save instructions</span>
         )}
       </button>
+
+      {/* Test Agent section - shown when instructions are saved */}
+      {agentInstructions.trim() && (
+        <div className="mt-8 rounded-2xl border-2 border-teal-200 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 p-6 shadow-sm">
+          <div className="mb-4 text-center">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Test Your Agent
+            </h3>
+            <p className="text-sm text-slate-600">
+              Test your agent before calling real clients. Click below to start a test call.
+            </p>
+          </div>
+          <TestAgent projectId={project.id} projectName={project.name} />
+        </div>
+      )}
     </div>
   );
 }

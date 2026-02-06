@@ -123,11 +123,26 @@ export async function listPhoneNumbers(): Promise<VapiPhoneNumberOption[]> {
 
 /** Map dropdown value to 11labs voiceId. Add more as needed. */
 const VOICE_IDS: Record<string, string> = {
+  // Default
+  default: "21m00Tcm4TlvDq8ikWAM", // Rachel
+  
+  // Female voices
   rachel: "21m00Tcm4TlvDq8ikWAM",
+  bella: "EXAVITQu4vr4xnSDxMaL",
+  elli: "MF3mGyEYCl7XYWbV9V6O",
+  domi: "AZnzlk1XvdvUeBnXmlld",
+  gigi: "jBpfuIE2acCO8z3wKNLl",
+  grace: "oWAxZDx7w5VEj9dCyTzz",
+  jessi: "TxGEqnHWrfWFTfGW9XjX",
+  nicole: "piTKgcLEGmPE4e6mEKli",
+  sky: "pFZP5JQG7iQjIQuC4Bku",
+  
+  // Male voices
   adam: "pNInz6obpgDQGcFmaJgB",
   antoni: "ErXwobaYiN019PkySvjV",
   sam: "yoZ06aMxZJJ28mfd3POQ",
-  default: "21m00Tcm4TlvDq8ikWAM",
+  arnold: "VR6AewLTigWG4xSOukaG",
+  daniel: "onwK4e9ZLuTAKqWW03F9",
 };
 
 /**

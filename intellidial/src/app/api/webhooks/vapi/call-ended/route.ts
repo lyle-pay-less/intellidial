@@ -4,6 +4,7 @@ import {
   listContacts,
   updateContact,
   incrementOrgUsage,
+  createNotificationForOrg,
 } from "@/lib/data/store";
 import { mapStructuredOutputsToCapturedData } from "@/lib/vapi/client";
 
@@ -128,6 +129,82 @@ export async function POST(req: NextRequest) {
     if (project.orgId) {
       const minutesDelta = (durationSeconds || 0) / 60;
       await incrementOrgUsage(project.orgId, 1, minutesDelta);
+
+      // Create notifications
+      if (project.orgId) {
+        if (isFailed) {
+          // Failed call notification
+          await createNotificationForOrg(
+            project.orgId,
+            "call_failed",
+            `Call failed: ${contact.name || contact.phone}`,
+            `Call to ${contact.name || contact.phone} (${contact.phone}) failed. Reason: ${endedReason || "Unknown"}`,
+            {
+              projectId: project.id,
+              projectName: project.name,
+              contactId: contact.id,
+              contactPhone: contact.phone,
+              contactName: contact.name ?? undefined,
+              callId: call.id,
+              failureReason: endedReason || "Call ended",
+              durationSeconds: 0,
+            }
+          );
+        } else {
+          // Successful call notification
+          const missingFields: string[] = [];
+          if (captureFieldKeys.length > 0 && capturedData) {
+            for (const key of captureFieldKeys) {
+              if (!capturedData[key] || capturedData[key] === null || capturedData[key] === "") {
+                missingFields.push(key);
+              }
+            }
+          }
+
+          if (missingFields.length > 0) {
+            // Data missing notification
+            await createNotificationForOrg(
+              project.orgId,
+              "data_missing",
+              `Missing data: ${contact.name || contact.phone}`,
+              `Call to ${contact.name || contact.phone} completed, but missing data for: ${missingFields.join(", ")}`,
+              {
+                projectId: project.id,
+                projectName: project.name,
+                contactId: contact.id,
+                contactPhone: contact.phone,
+                contactName: contact.name ?? undefined,
+                callId: call.id,
+                durationSeconds,
+                missingFields,
+                capturedData,
+                transcript: artifact?.transcript,
+                recordingUrl: artifact?.recording?.url,
+              }
+            );
+          } else {
+            // Call completed notification
+            await createNotificationForOrg(
+              project.orgId,
+              "call_completed",
+              `Call completed: ${contact.name || contact.phone}`,
+              `Successfully completed call to ${contact.name || contact.phone} (${contact.phone}). Duration: ${Math.round(durationSeconds / 60)}m ${durationSeconds % 60}s`,
+              {
+                projectId: project.id,
+                projectName: project.name,
+                contactId: contact.id,
+                contactPhone: contact.phone,
+                contactName: contact.name ?? undefined,
+                callId: call.id,
+                durationSeconds,
+                capturedData,
+                transcript: artifact?.transcript,
+                recordingUrl: artifact?.recording?.url,
+              }
+            );
+          }
+        }
+      }
     }
   } catch (e) {
     console.error("[Webhook] call-ended error:", e);

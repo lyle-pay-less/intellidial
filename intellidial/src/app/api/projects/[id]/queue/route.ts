@@ -41,13 +41,14 @@ export async function PATCH(
   const body = (await req.json()) as Record<string, unknown>;
   const contactIds = body?.contactIds as string[] | undefined;
   const add = body?.add !== false;
+  const scheduledTimes = body?.scheduledTimes as Array<{ contactId: string; scheduledTime: string | null }> | undefined;
   if (!Array.isArray(contactIds)) {
     return NextResponse.json(
       { error: "contactIds array is required" },
       { status: 400 }
     );
   }
-  setProjectQueue(id, contactIds, add);
+  setProjectQueue(id, contactIds, add, scheduledTimes);
   const updated = getProjectQueue(id);
   return NextResponse.json({ contactIds: updated });
 }

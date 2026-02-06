@@ -235,3 +235,19 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #5eead4, #67e8f9);
 }
+
+/* IntelliDial loader animation - left to right fill */
+@keyframes intellidial-fill {
+  0% {
+    clip-path: inset(0 100% 0 0);
+  }
+  50% {
+    clip-path: inset(0 0% 0 0);
+  }
+  100% {
+    clip-path: inset(0 0% 0 0);
+  }
+}
+.intellidial-fill-animation {
+  animation: intellidial-fill 2.5s ease-in-out infinite;
+}

@@ -13,6 +13,9 @@ import {
   X,
   MoreVertical,
   Crown,
+  Ban,
+  UserCheck,
+  ChevronDown,
 } from "lucide-react";
 
 type UserRole = "owner" | "admin" | "operator" | "viewer";
@@ -22,7 +25,7 @@ type TeamMember = {
   email: string;
   name?: string;
   role: UserRole;
-  status: "active" | "invited";
+  status: "active" | "invited" | "suspended";
   invitedAt?: string;
   lastActive?: string;
 };
@@ -88,11 +91,24 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showRoleMenu, setShowRoleMenu] = useState<string | null>(null);
+  const [showActionMenu, setShowActionMenu] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.uid) fetchTeam();
     else setLoading(false);
   }, [user?.uid]);
+
+  // Close menus when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!(e.target as Element).closest('[data-menu]')) {
+        setShowRoleMenu(null);
+        setShowActionMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const fetchTeam = async () => {
     if (!user?.uid) return;
@@ -166,8 +182,37 @@ export default function TeamPage() {
     }
   };
 
+  const handleSuspendMember = async (memberId: string, suspend: boolean) => {
+    if (!user?.uid) return;
+    const action = suspend ? "suspend" : "unsuspend";
+    if (!confirm(`${suspend ? "Suspend" : "Unsuspend"} this team member?`)) return;
+
+    try {
+      const res = await fetch(`/api/team/${memberId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user.uid,
+        },
+        body: JSON.stringify({ action }),
+      });
+      if (res.ok) {
+        fetchTeam();
+        setShowActionMenu(null);
+        setSuccess(`Member ${suspend ? "suspended" : "unsuspended"} successfully`);
+        window.setTimeout(() => setSuccess(null), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || `Failed to ${action} member`);
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} member`, err);
+      setError(`Failed to ${action} member`);
+    }
+  };
+
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Remove this team member?")) return;
+    if (!confirm("Remove this team member? This action cannot be undone.")) return;
     if (!user?.uid) return;
 
     try {
@@ -175,9 +220,18 @@ export default function TeamPage() {
         method: "DELETE",
         headers: { "x-user-id": user.uid },
       });
-      if (res.ok) fetchTeam();
+      if (res.ok) {
+        fetchTeam();
+        setShowActionMenu(null);
+        setSuccess("Member removed successfully");
+        window.setTimeout(() => setSuccess(null), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to remove member");
+      }
     } catch (err) {
       console.error("Failed to remove member", err);
+      setError("Failed to remove member");
     }
   };
 
@@ -208,6 +262,7 @@ export default function TeamPage() {
   }
 
   const activeMembers = members.filter((m) => m.status === "active");
+  const suspendedMembers = members.filter((m) => m.status === "suspended");
   const pendingInvites = members.filter((m) => m.status === "invited");
 
   return (
@@ -348,7 +403,7 @@ export default function TeamPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="relative inline-block">
+                        <div className="relative inline-block" data-menu>
                           <button
                             onClick={() =>
                               !isOwner && setShowRoleMenu(showRoleMenu === member.id ? null : member.id)
@@ -362,7 +417,7 @@ export default function TeamPage() {
                             {config.label}
                           </button>
                           {showRoleMenu === member.id && (
-                            <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+                            <div className="absolute left-0 top-full z-10 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl" data-menu>
                               {(Object.keys(ROLE_CONFIG) as UserRole[])
                                 .filter((r) => r !== "owner" && r !== member.role)
                                 .map((role) => {
@@ -390,13 +445,34 @@ export default function TeamPage() {
                         {isOwner ? (
                           <span className="text-xs text-slate-400">Full access</span>
                         ) : (
-                          <button
-                            onClick={() => handleRemoveMember(member.id)}
-                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                            aria-label="Remove member"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="relative inline-block" data-menu>
+                            <button
+                              onClick={() => setShowActionMenu(showActionMenu === member.id ? null : member.id)}
+                              className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                              aria-label="Member actions"
+                            >
+                              Actions
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </button>
+                            {showActionMenu === member.id && (
+                              <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl" data-menu>
+                                <button
+                                  onClick={() => handleSuspendMember(member.id, true)}
+                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                  <Ban className="h-4 w-4 text-amber-600" />
+                                  Suspend member
+                                </button>
+                                <button
+                                  onClick={() => handleRemoveMember(member.id)}
+                                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Remove member
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -407,6 +483,93 @@ export default function TeamPage() {
           </table>
         </div>
       </div>
+
+      {/* Suspended members */}
+      {suspendedMembers.length > 0 && (
+        <div className="mb-8 rounded-2xl border border-amber-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-4">
+            <h2 className="font-display text-lg font-semibold text-slate-900">
+              Suspended members
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs font-medium text-slate-500">
+                  <th className="px-6 py-3">Member</th>
+                  <th className="px-6 py-3">Role</th>
+                  <th className="px-6 py-3">Last active</th>
+                  <th className="px-6 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suspendedMembers.map((member) => {
+                  const config = ROLE_CONFIG[member.role];
+                  const Icon = config.icon;
+                  return (
+                    <tr
+                      key={member.id}
+                      className="border-b border-slate-50 hover:bg-slate-50/50"
+                    >
+                      <td className="px-6 py-4">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {member.name || member.email}
+                          </p>
+                          {member.name && (
+                            <p className="text-xs text-slate-500">{member.email}</p>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium ${config.color}`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {config.label}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {formatLastActive(member.lastActive)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="relative inline-block" data-menu>
+                          <button
+                            onClick={() => setShowActionMenu(showActionMenu === member.id ? null : member.id)}
+                            className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            aria-label="Member actions"
+                          >
+                            Actions
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                          {showActionMenu === member.id && (
+                            <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-xl border border-slate-200 bg-white py-1 shadow-xl" data-menu>
+                              <button
+                                onClick={() => handleSuspendMember(member.id, false)}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                <UserCheck className="h-4 w-4 text-teal-600" />
+                                Unsuspend member
+                              </button>
+                              <button
+                                onClick={() => handleRemoveMember(member.id)}
+                                className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Remove member
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Pending invites */}
       {pendingInvites.length > 0 && (

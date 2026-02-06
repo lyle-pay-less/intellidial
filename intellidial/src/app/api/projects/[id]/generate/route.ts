@@ -157,12 +157,15 @@ export async function POST(
     const industryStr = typeof industry === "string" ? industry.trim() : "";
     const label = industryLabel(industryStr || "other");
 
-  // —— Tone: Gemini generates from industry; fallback mock
+  // —— Tone: Gemini generates from goal (and industry); fallback mock
   if (type === "tone") {
+    const goalInput = typeof body?.goal === "string" ? body.goal.trim() : "";
+    const goalContext = goalInput ? ` The agent's goal is: "${goalInput.slice(0, 300)}".` : "";
+    
     if (isGeminiConfigured()) {
-      const prompt = `You are helping configure an AI phone agent for outbound calls. The user's industry or use case is: "${label}".
+      const prompt = `You are helping configure an AI phone agent for outbound calls. The user's industry or use case is: "${label}".${goalContext}
 
-Write a short tone description (2-4 sentences) for how the agent should act and speak on the phone. Be specific to this industry. Include pace, demeanor, and any compliance or sensitivity notes. Output only the tone description, no headings or labels.`;
+Write a short tone description (2-4 sentences) for how the agent should act and speak on the phone. Be specific to this industry and goal. Include pace, demeanor, and any compliance or sensitivity notes. Output only the tone description, no headings or labels.`;
       const tone = await generateText(prompt);
       if (tone) return NextResponse.json({ tone });
     }
@@ -174,11 +177,11 @@ Write a short tone description (2-4 sentences) for how the agent should act and 
   if (type === "goal") {
     const currentGoal = typeof body.goal === "string" ? body.goal.trim() : "";
     if (isGeminiConfigured() && currentGoal) {
-      const prompt = `You are helping configure an AI phone agent for outbound calls. The user wrote this goal:
+      const prompt = `You are helping configure an AI phone agent for outbound calls. The user's industry or use case is: "${label}". The user wrote this goal:
 
 "${currentGoal.slice(0, 1000)}"
 
-Enhance it: (1) structure it clearly, (2) fix any grammar or clarity errors, (3) add any important steps or outcomes the user might have forgotten (e.g. confirm contact details, note objections, set next step). Keep their intent and tone. Return only the enhanced goal text, 2-5 sentences, no headings or bullet points.`;
+Enhance it: (1) structure it clearly, (2) fix any grammar or clarity errors, (3) add any important steps or outcomes the user might have forgotten (e.g. confirm contact details, note objections, set next step). Consider the industry context when enhancing. Keep their intent and tone. Return only the enhanced goal text, 2-5 sentences, no headings or bullet points.`;
       const goal = await generateText(prompt);
       if (goal) return NextResponse.json({ goal });
     }
@@ -186,18 +189,19 @@ Enhance it: (1) structure it clearly, (2) fix any grammar or clarity errors, (3)
     return NextResponse.json({ goal: currentGoal || config.goal });
   }
 
-  // —— Questions: Gemini generates from industry (and optional goal); fallback mock
+  // —— Questions: Gemini generates from goal (and industry); fallback mock
   if (type === "questions") {
     const countStr = typeof body?.count === 'string' || typeof body?.count === 'number' ? String(body.count) : "5";
     const count = Math.min(10, Math.max(1, parseInt(countStr, 10)));
     const existing = (body?.existing ?? []) as string[];
     const existingSet = new Set(existing.map((t: string) => t.toLowerCase().trim()));
-    const goalHint = body?.goal ? ` Goal: ${(body.goal as string).slice(0, 200)}.` : "";
+    const goalInput = typeof body?.goal === "string" ? body.goal.trim() : "";
+    const goalContext = goalInput ? ` The agent's primary goal is: "${goalInput.slice(0, 400)}".` : "";
 
     if (isGeminiConfigured()) {
-      const prompt = `You are helping configure an AI phone agent for outbound calls. Industry: "${label}".${goalHint}
+      const prompt = `You are helping configure an AI phone agent for outbound calls. Industry: "${label}".${goalContext}
 
-Generate exactly ${count} specific questions the agent will ask during the call. Questions should be relevant to this industry and suitable for a short phone conversation. Output ONLY a JSON array of strings, e.g. ["Question 1?", "Question 2?"]. No other text.`;
+Generate exactly ${count} specific questions the agent will ask during the call to achieve this goal. Questions should be relevant to the goal and industry, suitable for a short phone conversation, and help gather the information needed. Output ONLY a JSON array of strings, e.g. ["Question 1?", "Question 2?"]. No other text.`;
       const raw = await generateText(prompt);
       if (raw) {
         try {
@@ -264,34 +268,71 @@ Generate exactly ${count} specific questions the agent will ask during the call.
     return NextResponse.json({ captureFields });
   }
 
-  // —— Script: one coherent prompt from tone + goal + questions (Gemini combines; else we build one)
+  // —— Script: one coherent prompt from tone + goal + questions + name + company + best practices (Gemini combines; else we build one)
   if (type === "script") {
     const tone = (typeof body?.tone === 'string' ? body.tone : "").trim();
     const goal = (typeof body?.goal === 'string' ? body.goal : "").trim();
     const qList = (body?.questions ?? []) as string[];
     const questionLines = qList.filter((q) => typeof q === "string" && q.trim()).map((q) => q.trim());
+    const agentName = (typeof body?.agentName === 'string' ? body.agentName : "").trim();
+    const agentCompany = (typeof body?.agentCompany === 'string' ? body.agentCompany : "").trim();
 
     if (isGeminiConfigured() && (tone || goal || questionLines.length > 0)) {
-      const prompt = `You are writing the full system prompt for an AI phone agent. The user has provided:
+      const prompt = `You are writing the full system prompt for an AI phone agent. The user's industry or use case is: "${label}". The user has provided:
 
-Tone: ${tone || "(not specified)"}
-Goal: ${goal || "(not specified)"}
-Questions to ask during the call:
-${questionLines.map((q, i) => `${i + 1}. ${q}`).join("\n")}
+${tone ? `Tone: ${tone}` : ""}
+${goal ? `Goal: ${goal}` : ""}
+${agentName ? `Agent Name: ${agentName}` : ""}
+${agentCompany ? `Company/Organization Name: ${agentCompany}` : ""}
+${questionLines.length > 0 ? `Questions to ask during the call:\n${questionLines.map((q, i) => `${i + 1}. ${q}`).join("\n")}` : ""}
 
-Write ONE coherent, flowing prompt (paragraphs or short sections are fine). The prompt should tell the agent how to introduce itself, how to behave (tone), what to achieve (goal), and what to ask—as a single set of instructions an AI can follow naturally. Do not output bullet lists or labels like "Tone:" or "Goal:"; write continuous prose. Output only the prompt.`;
+CRITICAL BEST PRACTICES TO INCLUDE:
+- Appear as human and natural as possible in all interactions
+- When the call connects, answer "Hello" first and wait for the person to respond before continuing
+- Always confirm the person's name at the beginning: "Hi, is this [Name]?" or "Am I speaking with [Name]?" - wait for confirmation before proceeding
+- If the person starts speaking while you are speaking, immediately stop talking and let them finish
+- Use natural pauses and conversational flow - don't rush through questions
+- Listen actively and acknowledge what the person says before moving to the next question
+- Be respectful of their time and ask if it's a good time before diving into questions
+
+Write ONE coherent, flowing prompt that combines all of the above into natural instructions. The prompt should tell the agent:
+1. How to introduce itself (using the agent name and company name if provided)
+2. How to behave (tone) - consider the industry context
+3. What to achieve (goal) - tailored to this industry
+4. The conversation flow including confirming the person's name first
+5. What questions to ask naturally during the conversation
+6. All the best practices listed above
+
+Consider the industry context (${label}) throughout the prompt to ensure the agent's behavior, language, and approach are appropriate for this industry. Write this as continuous prose that reads naturally, not as bullet points or labeled sections. The agent should follow these instructions seamlessly. Output only the final prompt.`;
       const script = await generateText(prompt);
       if (script) return NextResponse.json({ agentInstructions: script });
     }
 
-    // Fallback: single coherent paragraph (no raw bullet blocks)
+    // Fallback: single coherent paragraph with best practices
     const parts: string[] = [];
-    if (tone) parts.push(`You should sound and act as follows: ${tone}`);
-    if (goal) parts.push(`Your aim on each call is to ${goal.toLowerCase().replace(/^your aim is to /i, "").replace(/\.$/, "")}.`);
-    if (questionLines.length > 0) {
-      parts.push(`During the call, work through these questions naturally: ${questionLines.join(" ")}`);
+    
+    // Introduction and name confirmation
+    if (agentName && agentCompany) {
+      parts.push(`You are ${agentName}, calling on behalf of ${agentCompany}.`);
+    } else if (agentName) {
+      parts.push(`You are ${agentName}.`);
+    } else if (agentCompany) {
+      parts.push(`You are calling on behalf of ${agentCompany}.`);
     }
-    parts.push("Introduce yourself briefly, confirm you have the right person, and thank them for their time at the end.");
+    
+    parts.push(`You are operating in the ${label} industry. When the call connects, answer "Hello" first and wait for the person to respond. Always confirm the person's name at the beginning by asking "Hi, is this [Name]?" or "Am I speaking with [Name]?" - wait for confirmation before proceeding with the conversation.`);
+    
+    if (tone) parts.push(`Throughout the call, you should sound and act as follows: ${tone}`);
+    if (goal) parts.push(`Your primary goal on each call is to ${goal.toLowerCase().replace(/^your (aim|goal) is to /i, "").replace(/\.$/, "")}.`);
+    
+    parts.push(`Appear as human and natural as possible. If the person starts speaking while you are speaking, immediately stop talking and let them finish. Use natural pauses and conversational flow - don't rush through questions. Listen actively and acknowledge what the person says before moving to the next question.`);
+    
+    if (questionLines.length > 0) {
+      parts.push(`During the call, work through these questions naturally in conversation: ${questionLines.join(" ")}`);
+    }
+    
+    parts.push(`Be respectful of their time and thank them for their time at the end.`);
+    
     const script = parts.join(" ");
     return NextResponse.json({ agentInstructions: script });
   }

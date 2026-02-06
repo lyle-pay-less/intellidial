@@ -12,8 +12,13 @@ import {
   ExternalLink,
   FileText,
   Check,
+  User,
+  Bell,
+  Plug,
+  Key,
 } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 type Plan = "starter" | "growth" | "business";
 
@@ -66,25 +71,42 @@ const PLAN_CONFIG: Record<
 };
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [usage, setUsage] = useState<{ callsUsed: number; callsLimit: number | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSettings();
-  }, []);
+  }, [user?.uid]);
 
   const fetchSettings = async () => {
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
+    
     try {
-      const res = await fetch("/api/settings");
-      if (res.ok) {
-        const data = await res.json();
+      const headers = { "x-user-id": user.uid };
+      const [settingsRes, statsRes] = await Promise.all([
+        fetch("/api/settings"),
+        fetch("/api/dashboard/stats", { headers }).catch(() => null)
+      ]);
+      
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
         setSubscription(data.subscription ?? null);
         setPaymentMethod(data.paymentMethod ?? null);
         setInvoices(data.invoices ?? []);
+      }
+      
+      if (statsRes?.ok) {
+        const statsData = await statsRes.json();
+        setUsage(statsData.usage ?? null);
       }
     } finally {
       setLoading(false);
@@ -145,13 +167,40 @@ export default function SettingsPage() {
             <ChevronRight className="h-4 w-4" />
           </Link>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-3">
           <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
             <p className="mb-1 text-xs font-medium text-slate-500">Current plan</p>
             <p className="font-display text-lg font-semibold text-slate-900">
               {planConfig?.label ?? subscription?.planLabel ?? "—"}
             </p>
             <p className="text-sm text-slate-600">{planConfig?.description ?? ""}</p>
+          </div>
+          <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+            <p className="mb-1 text-xs font-medium text-slate-500">Usage this month</p>
+            {usage ? (
+              <>
+                <p className="font-display text-lg font-semibold text-slate-900">
+                  {usage.callsUsed} / {usage.callsLimit != null ? usage.callsLimit.toLocaleString() : "Unlimited"}
+                </p>
+                {usage.callsLimit != null && usage.callsLimit > 0 && (
+                  <>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (usage.callsUsed / usage.callsLimit) >= 0.8 ? "bg-amber-500" : "bg-teal-500"
+                        }`}
+                        style={{ width: `${Math.min(100, (usage.callsUsed / usage.callsLimit) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {Math.max(0, usage.callsLimit - usage.callsUsed).toLocaleString()} calls remaining
+                    </p>
+                  </>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-600">Loading...</p>
+            )}
           </div>
           <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
             <p className="mb-1 text-xs font-medium text-slate-500">Next billing date</p>
@@ -286,6 +335,86 @@ export default function SettingsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      {/* Account/Profile */}
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <User className="h-5 w-5 text-teal-600" />
+          <h2 className="font-display text-lg font-semibold text-slate-900">
+            Account & Profile
+          </h2>
+        </div>
+        <p className="mb-4 text-sm text-slate-600">
+          Manage your account information and preferences.
+        </p>
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/30 px-4 py-6 text-center text-sm text-slate-500">
+          Profile management coming soon. Contact support to update your account details.
+        </div>
+      </section>
+
+      {/* Integrations */}
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <Plug className="h-5 w-5 text-teal-600" />
+          <h2 className="font-display text-lg font-semibold text-slate-900">
+            Integrations
+          </h2>
+        </div>
+        <p className="mb-4 text-sm text-slate-600">
+          Connect your favorite tools to automate workflows and sync data.
+        </p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-slate-900">CRM</h3>
+              <span className="text-xs text-slate-500">Coming soon</span>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">Sync call results to your CRM</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                HubSpot
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                Salesforce
+              </span>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-medium text-slate-900">Data Export</h3>
+              <span className="text-xs text-slate-500">Coming soon</span>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">Export results automatically</p>
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                Google Sheets
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                AWS S3
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                Azure Blob
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Notifications */}
+      <section className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-4 flex items-center gap-2">
+          <Bell className="h-5 w-5 text-teal-600" />
+          <h2 className="font-display text-lg font-semibold text-slate-900">
+            Notifications
+          </h2>
+        </div>
+        <p className="mb-4 text-sm text-slate-600">
+          Configure how and when you receive notifications.
+        </p>
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/30 px-4 py-6 text-center text-sm text-slate-500">
+          Notification preferences coming soon.
         </div>
       </section>
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProject, listContacts, createContacts } from "@/lib/data/store";
+import { getProject, listContacts, createContacts, getProjectQueue, getContactScheduledTime } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
 
 export async function GET(
@@ -16,8 +16,9 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
   const { searchParams } = new URL(req.url);
+  const idsOnly = searchParams.get("idsOnly") === "true";
   const limit = Math.min(
-    100,
+    10000,
     Math.max(1, parseInt(searchParams.get("limit") ?? "50", 10))
   );
   const offset = Math.max(0, parseInt(searchParams.get("offset") ?? "0", 10));
@@ -25,7 +26,18 @@ export async function GET(
   const statusFilter = status && ["all", "pending", "success", "failed", "calling"].includes(status) ? status : undefined;
 
   const { contacts: contactList, total } = await listContacts(id, { limit, offset, status: statusFilter });
-  return NextResponse.json({ contacts: contactList, total, limit, offset });
+  
+  if (idsOnly) {
+    return NextResponse.json({ contactIds: contactList.map(c => c.id) });
+  }
+  
+  // Add scheduled times to contacts
+  const contactsWithScheduledTimes = contactList.map(c => ({
+    ...c,
+    scheduledTime: getContactScheduledTime(id, c.id) ?? null
+  }));
+  
+  return NextResponse.json({ contacts: contactsWithScheduledTimes, total, limit, offset });
 }
 
 export async function POST(

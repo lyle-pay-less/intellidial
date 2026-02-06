@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { FolderOpen, Plus, Loader2, ArrowRight, Calendar, User } from "lucide-react";
 import Link from "next/link";
+import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 
 type Project = {
   id: string;
@@ -107,8 +108,8 @@ export default function ProjectsPage() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <div className="flex items-center justify-center min-h-[400px] w-full">
+          <IntelliDialLoader />
         </div>
       ) : projects.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-slate-50/80 to-white p-16 text-center shadow-sm">

@@ -14,6 +14,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import Link from "next/link";
 import {
   PieChart,
@@ -69,6 +70,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState<"all" | "wow" | "mom">("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
+  // Pie chart: start at 0 so Recharts animates from zero to final values
+  const [pieOutcomes, setPieOutcomes] = useState({ success: 0, failed: 0 });
 
   useEffect(() => {
     if (!user?.uid) {
@@ -101,6 +104,24 @@ export default function DashboardPage() {
       .then(setStats)
       .finally(() => setLoading(false));
   }, [period, projectFilter, user?.uid]);
+
+  // When stats load, delay pie values so chart animates from 0 to final
+  useEffect(() => {
+    if (!stats || stats.callsMade === 0) {
+      setPieOutcomes({ success: 0, failed: 0 });
+      return;
+    }
+    setPieOutcomes({ success: 0, failed: 0 });
+    const t = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setPieOutcomes({
+          success: stats.successfulCalls,
+          failed: stats.unsuccessfulCalls,
+        });
+      });
+    });
+    return () => cancelAnimationFrame(t);
+  }, [stats?.successfulCalls, stats?.unsuccessfulCalls, stats?.callsMade]);
 
   return (
     <div className="p-6 md:p-8">
@@ -156,8 +177,8 @@ export default function DashboardPage() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <div className="flex items-center justify-center min-h-[400px] w-full">
+          <IntelliDialLoader />
         </div>
       ) : stats ? (
         <>
@@ -242,8 +263,8 @@ export default function DashboardPage() {
                       <PieChart>
                         <Pie
                           data={[
-                            { name: "Successful", value: stats.successfulCalls, color: CHART_COLORS.success },
-                            { name: "Failed", value: stats.unsuccessfulCalls, color: CHART_COLORS.failed },
+                            { name: "Successful", value: pieOutcomes.success, color: CHART_COLORS.success },
+                            { name: "Failed", value: pieOutcomes.failed, color: CHART_COLORS.failed },
                           ]}
                           cx="50%"
                           cy="50%"
@@ -251,13 +272,17 @@ export default function DashboardPage() {
                           outerRadius={110}
                           paddingAngle={2}
                           dataKey="value"
+                          isAnimationActive={true}
+                          animationBegin={0}
+                          animationDuration={1000}
+                          animationEasing="ease-out"
                           label={({ name, percent }) =>
-                            `${name} ${(percent * 100).toFixed(0)}%`
+                            percent > 0 ? `${name} ${(percent * 100).toFixed(0)}%` : ""
                           }
                         >
                           {[
-                            { name: "Successful", value: stats.successfulCalls, color: CHART_COLORS.success },
-                            { name: "Failed", value: stats.unsuccessfulCalls, color: CHART_COLORS.failed },
+                            { name: "Successful", value: pieOutcomes.success, color: CHART_COLORS.success },
+                            { name: "Failed", value: pieOutcomes.failed, color: CHART_COLORS.failed },
                           ].map((entry, i) => (
                             <Cell key={i} fill={entry.color} />
                           ))}
