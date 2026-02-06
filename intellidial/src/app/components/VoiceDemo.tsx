@@ -63,11 +63,24 @@ export function VoiceDemo() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Demo not configured");
       }
-      const { assistantId, publicKey } = await res.json();
-      if (!publicKey || !assistantId) {
+      const { assistantId: rawAssistantId, publicKey: rawPublicKey } = await res.json();
+      if (!rawPublicKey || !rawAssistantId) {
         throw new Error("Missing VAPI_PUBLIC_KEY or VAPI_DEMO_ASSISTANT_ID in doctor .env");
       }
 
+      // Trim whitespace (Secret Manager might add newlines)
+      const publicKey = rawPublicKey.trim();
+      const assistantId = rawAssistantId.trim();
+
+      // Validate format
+      if (!publicKey || publicKey.length < 10) {
+        throw new Error("Invalid VAPI_PUBLIC_KEY format");
+      }
+      if (!assistantId || assistantId.length < 10) {
+        throw new Error("Invalid VAPI_DEMO_ASSISTANT_ID format");
+      }
+
+      console.log("[VoiceDemo] Starting call with assistantId:", assistantId.substring(0, 8) + "...");
       const vapi = new Vapi(publicKey);
       let connectionTimeoutId: number | null = null;
 
@@ -101,12 +114,29 @@ export function VoiceDemo() {
       });
       vapi.on("error", (e: unknown) => {
         clearConnectionTimeout();
-        const msg =
-          e instanceof Error
-            ? e.message
-            : typeof e === "object" && e && "message" in e
-              ? String((e as { message: unknown }).message)
-              : "Voice error";
+        console.error("[VoiceDemo] VAPI error:", e);
+        let msg = "Voice error";
+        if (e instanceof Error) {
+          msg = e.message;
+        } else if (typeof e === "object" && e) {
+          // Try to extract detailed error message
+          if ("message" in e) {
+            msg = String(e.message);
+          } else if ("error" in e) {
+            msg = String(e.error);
+          } else if ("details" in e) {
+            msg = String(e.details);
+          }
+          // Check for common VAPI error patterns
+          const errorStr = JSON.stringify(e);
+          if (errorStr.includes("400") || errorStr.includes("Bad Request")) {
+            msg = "Invalid request. Check VAPI_PUBLIC_KEY and VAPI_DEMO_ASSISTANT_ID in environment.";
+          } else if (errorStr.includes("401") || errorStr.includes("Unauthorized")) {
+            msg = "Authentication failed. Check VAPI_PUBLIC_KEY is correct.";
+          } else if (errorStr.includes("404") || errorStr.includes("Not Found")) {
+            msg = "Assistant not found. Check VAPI_DEMO_ASSISTANT_ID is correct.";
+          }
+        }
         setError(msg);
         setConnecting(false);
         setCallActive(false);
