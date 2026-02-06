@@ -4,23 +4,23 @@
 steps:
   # Step 1: Build Docker image (run from app dir so paths are correct)
   # NEXT_PUBLIC_* vars must be available at BUILD TIME to be embedded in client bundle
+  # Note: These are public values (embedded in client bundle), so hardcoding is safe
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'intellidial'
-    secretEnv: ['NEXT_PUBLIC_FIREBASE_API_KEY', 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN', 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET', 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', 'NEXT_PUBLIC_FIREBASE_APP_ID']
     args:
       - 'build'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_API_KEY=$$NEXT_PUBLIC_FIREBASE_API_KEY'
+      - 'NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyATWgJDYOPR67Dnj2baviRTpneh54QkCBU'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'
+      - 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=intellidial-39ca7.firebaseapp.com'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=$$NEXT_PUBLIC_FIREBASE_PROJECT_ID'
+      - 'NEXT_PUBLIC_FIREBASE_PROJECT_ID=intellidial-39ca7'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=$$NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'
+      - 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=intellidial-39ca7.firebasestorage.app'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'
+      - 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=81645167087'
       - '--build-arg'
-      - 'NEXT_PUBLIC_FIREBASE_APP_ID=$$NEXT_PUBLIC_FIREBASE_APP_ID'
+      - 'NEXT_PUBLIC_FIREBASE_APP_ID=1:81645167087:web:ae25ef5c452b052b0e961a'
       - '-t'
       - 'gcr.io/$PROJECT_ID/intellidial:$COMMIT_SHA'
       - '-t'
@@ -68,22 +68,8 @@ steps:
       - '--min-instances'
       - '0'
 
-# Available secrets for build step
-# Cloud Build service account (81645167087@cloudbuild.gserviceaccount.com) needs Secret Manager Secret Accessor role
-availableSecrets:
-  secretManager:
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-api-key/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_API_KEY'
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-auth-domain/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN'
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-project-id/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID'
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-storage-bucket/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET'
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-messaging-sender-id/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID'
-    - versionName: projects/intellidial-39ca7/secrets/next-public-firebase-app-id/versions/latest
-      env: 'NEXT_PUBLIC_FIREBASE_APP_ID'
+# Note: NEXT_PUBLIC_* vars are hardcoded above (they're public anyway, embedded in client bundle)
+# Runtime secrets (VAPI_*, GEMINI_*, etc.) are still loaded from Secret Manager via --set-secrets in deploy step
 
 # Options
 options:
