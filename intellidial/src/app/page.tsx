@@ -264,7 +264,7 @@ export default function LandingPage() {
 
             <FadeInOnScroll delay={200}>
               <p className="mt-6 text-lg sm:text-xl text-slate-600 leading-relaxed max-w-2xl mx-auto">
-                We call your list, ask your questions, and return Excel + recordings in 2–5 days.
+                We call your list, ask your questions, and return Excel + recordings instantly.
                 No manual dialling — just structured data.
               </p>
             </FadeInOnScroll>
@@ -358,8 +358,8 @@ export default function LandingPage() {
                 <Clock className="w-5 h-5 text-teal-600" />
               </div>
               <div>
-                <div className="font-bold text-slate-900">2-5 Days</div>
-                <div className="text-xs text-slate-500">Avg. Turnaround</div>
+                <div className="font-bold text-slate-900">Instant</div>
+                <div className="text-xs text-slate-500">Real-time Results</div>
               </div>
             </div>
             <div className="w-px h-10 bg-slate-200 hidden sm:block"></div>
@@ -572,7 +572,7 @@ export default function LandingPage() {
               { icon: Shield, title: "Full Recordings", desc: "Every call recorded for QA, compliance, and verification purposes." },
               { icon: Lock, title: "Local SA Numbers", desc: "Higher answer rates with local South African caller ID." },
               { icon: Headphones, title: "Dedicated Support", desc: "Real humans available to help you succeed with your projects." },
-              { icon: Clock, title: "Fast Turnaround", desc: "Most projects completed within 2-5 business days." },
+              { icon: Clock, title: "Instant Results", desc: "Get Excel files and recordings in real-time as calls complete." },
               { icon: Star, title: "Quality Guaranteed", desc: "95%+ accuracy or we'll rerun the calls at no extra cost." },
             ].map((feature, i) => (
               <FadeInOnScroll key={i} delay={i * 50}>

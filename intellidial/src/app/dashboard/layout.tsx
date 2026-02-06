@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [credentialsBanner, setCredentialsBanner] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid) {
@@ -32,12 +33,19 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
         if (data.hasOrganization && data.organization) {
           console.log("[Dashboard Layout] Setting org name:", data.organization.name);
           setOrgName(data.organization.name);
+          setCredentialsBanner(null);
         } else {
           console.warn("[Dashboard Layout] No organization found for user");
+          if (data.credentialsExpired && data.credentialsHelp) {
+            setCredentialsBanner(data.credentialsHelp);
+          } else {
+            setCredentialsBanner(null);
+          }
         }
       })
       .catch((err) => {
         console.error("[Dashboard Layout] Failed to fetch organization", err);
+        setCredentialsBanner(null);
       });
   }, [user]);
 
@@ -103,7 +111,15 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="pl-56">{children}</main>
+      <main className="pl-56">
+        {credentialsBanner && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-sm text-amber-900">
+            <strong>Local dev:</strong> Firebase credentials need re-auth. In a terminal run:{" "}
+            <code className="bg-amber-100 px-1.5 py-0.5 rounded font-mono text-xs">{credentialsBanner}</code>
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

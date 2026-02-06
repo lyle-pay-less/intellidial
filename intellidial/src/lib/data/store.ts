@@ -85,6 +85,26 @@ const DEMO_ORG_IDS = [DEMO_ORG_ID];
 /** Org names that get demo data seeded at runtime (test/demo orgs) */
 const DEMO_ORG_NAMES = ["pay-less", "payless"];
 
+/** When Firestore fails with a credential/re-auth error, skip Firestore on subsequent calls (avoids 7s hang per request). */
+let firestoreCredentialFailed = false;
+/** Last credential error message for API to return to client. */
+let lastCredentialErrorHelp: string | null = null;
+
+function isCredentialError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /invalid_grant|invalid_rapt|reauth|reauth related/i.test(msg);
+}
+
+/** Call after getUserOrganization returns null to check if Firestore failed due to credentials. */
+export function hadFirestoreCredentialError(): boolean {
+  return firestoreCredentialFailed;
+}
+
+/** Message to show user when credentials failed (e.g. for local dev). */
+export function getFirestoreCredentialErrorHelp(): string | null {
+  return lastCredentialErrorHelp;
+}
+
 function nextContactId() {
   return `contact-${++contactIdCounter}`;
 }
@@ -1076,28 +1096,43 @@ export async function createOrganization(data: {
  * Checks Firestore first if available, otherwise uses in-memory store.
  */
 export async function getUserOrganization(userId: string): Promise<string | null> {
+  console.log("[Store] getUserOrganization called:", { userId, isFirebaseConfigured: isFirebaseAdminConfigured() });
+
+  // Fast path: skip Firestore when we've already seen a credential error (avoids ~7s hang per request)
+  if (firestoreCredentialFailed) {
+    const inMemoryOrgId = userOrganizations.get(userId) ?? null;
+    return inMemoryOrgId;
+  }
+
   // Try Firestore first if configured
   if (isFirebaseAdminConfigured()) {
     try {
       const db = getFirebaseAdminFirestore();
+      console.log("[Store] Firestore DB obtained, querying userOrganizations:", { userId });
+
       const userOrgDoc = await db.collection("userOrganizations").doc(userId).get();
       
       let orgIdFromMapping: string | null = null;
       if (userOrgDoc.exists) {
         const data = userOrgDoc.data();
         orgIdFromMapping = data?.orgId ?? null;
+        console.log("[Store] userOrganizations document exists:", { userId, orgId: orgIdFromMapping, fullData: data });
+      } else {
+        console.log("[Store] userOrganizations document does not exist:", { userId });
       }
 
       // If userOrganizations points to demo org but user is not dev-user-1, that's suspicious
       // Check team members to find the correct org
       if (orgIdFromMapping === DEMO_ORG_ID && userId !== "dev-user-1") {
-        console.log("[Store] userOrganizations points to demo org for non-dev user, checking team members:", { userId, orgIdFromMapping });
+        console.log("[Store] ⚠️ CRITICAL: userOrganizations points to demo org for non-dev user, ignoring and checking team members:", { userId, orgIdFromMapping });
         orgIdFromMapping = null; // Ignore the wrong mapping
       }
 
       // If we have a valid mapping, use it
-      if (orgIdFromMapping) {
-        console.log("[Store] Found organization in Firestore userOrganizations:", { userId, orgId: orgIdFromMapping });
+      if (orgIdFromMapping && orgIdFromMapping !== DEMO_ORG_ID) {
+        console.log("[Store] ✅ Found valid organization in Firestore userOrganizations:", { userId, orgId: orgIdFromMapping });
+        firestoreCredentialFailed = false;
+        lastCredentialErrorHelp = null;
         userOrganizations.set(userId, orgIdFromMapping);
         return orgIdFromMapping;
       }
@@ -1107,33 +1142,61 @@ export async function getUserOrganization(userId: string): Promise<string | null
       // Note: This is a fallback for users who were added via invite but the mapping wasn't persisted
       console.log("[Store] userOrganizations lookup failed or invalid, checking team members as fallback:", { userId });
       const orgsSnap = await db.collection(COLLECTIONS.organizations).get();
+      console.log("[Store] Found organizations in Firestore:", { count: orgsSnap.docs.length });
+      
       for (const orgDoc of orgsSnap.docs) {
         const memberDoc = await orgDoc.ref.collection("members").doc(userId).get();
         if (memberDoc.exists) {
           const orgId = orgDoc.id;
-          console.log("[Store] Found organization via team member lookup, persisting to userOrganizations:", { userId, orgId });
+          const orgData = await db.collection(COLLECTIONS.organizations).doc(orgId).get();
+          const orgName = orgData.data()?.name ?? "Unknown";
+          console.log("[Store] ✅ Found organization via team member lookup:", { userId, orgId, orgName });
+          
           // Persist to userOrganizations for faster future lookups
           try {
             await db.collection("userOrganizations").doc(userId).set({ orgId });
+            console.log("[Store] ✅ Persisted user-org mapping to Firestore:", { userId, orgId });
+            firestoreCredentialFailed = false;
+            lastCredentialErrorHelp = null;
             userOrganizations.set(userId, orgId);
             return orgId;
           } catch (persistError) {
-            console.warn("[Store] Failed to persist user-org mapping after team member lookup:", persistError instanceof Error ? persistError.message : persistError);
+            console.error("[Store] ❌ Failed to persist user-org mapping after team member lookup:", persistError instanceof Error ? persistError.message : persistError);
             // Still return the orgId even if persistence failed
             userOrganizations.set(userId, orgId);
             return orgId;
           }
         }
       }
-      console.log("[Store] No organization found for user in userOrganizations or team members:", { userId });
+      console.log("[Store] ❌ No organization found for user in userOrganizations or team members:", { userId });
     } catch (error) {
-      console.warn("[Store] Failed to get organization from Firestore (Firebase may not be configured), falling back to in-memory:", error instanceof Error ? error.message : error);
+      const isCred = isCredentialError(error);
+      if (isCred) {
+        firestoreCredentialFailed = true;
+        const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "intellidial-39ca7";
+        lastCredentialErrorHelp = `gcloud auth application-default login && gcloud auth application-default set-quota-project ${projectId}`;
+        console.error("[Store] ❌ Firestore credentials expired or need re-auth. Run:", lastCredentialErrorHelp);
+      } else {
+        console.error("[Store] ❌ CRITICAL ERROR: Failed to get organization from Firestore:", {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        });
+      }
       // Fall through to in-memory storage
     }
+  } else {
+    console.warn("[Store] Firebase Admin not configured, using in-memory storage:", { userId });
   }
   
-  // Fallback to in-memory storage
-  return userOrganizations.get(userId) ?? null;
+  // Fallback to in-memory storage (should be empty for real users)
+  const inMemoryOrgId = userOrganizations.get(userId) ?? null;
+  if (inMemoryOrgId) {
+    console.warn("[Store] ⚠️ Using in-memory org mapping (Firestore not available):", { userId, orgId: inMemoryOrgId });
+  } else {
+    console.log("[Store] No organization found in-memory:", { userId });
+  }
+  return inMemoryOrgId;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserOrganization, getOrganization } from "@/lib/data/store";
+import { getUserOrganization, getOrganization, hadFirestoreCredentialError, getFirestoreCredentialErrorHelp } from "@/lib/data/store";
 
 /**
  * GET /api/auth/organization
@@ -22,11 +22,24 @@ export async function GET(req: NextRequest) {
 
     const orgId = await getUserOrganization(userId);
     console.log("[Get Organization API] Found orgId:", orgId);
-    
+
     if (!orgId) {
+      const credentialsExpired = hadFirestoreCredentialError();
+      const helpMessage = getFirestoreCredentialErrorHelp();
       return NextResponse.json({
         hasOrganization: false,
         organization: null,
+        ...(credentialsExpired && helpMessage && { credentialsExpired: true, credentialsHelp: helpMessage }),
+      });
+    }
+
+    // Safety check: prevent demo org for real users
+    if (orgId === "dev-org-1" && userId !== "dev-user-1") {
+      console.error("[Get Organization API] ⚠️ CRITICAL: Attempted to return demo org for non-dev user:", { userId, orgId });
+      return NextResponse.json({
+        hasOrganization: false,
+        organization: null,
+        error: "Invalid organization assignment",
       });
     }
 
@@ -37,6 +50,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         hasOrganization: false,
         organization: null,
+      });
+    }
+
+    // Double-check org name matches expected (extra safety)
+    if (org.name === "Demo Organization" && userId !== "dev-user-1") {
+      console.error("[Get Organization API] ⚠️ CRITICAL: Attempted to return Demo Organization for non-dev user:", { userId, orgId, orgName: org.name });
+      return NextResponse.json({
+        hasOrganization: false,
+        organization: null,
+        error: "Invalid organization assignment",
       });
     }
 
