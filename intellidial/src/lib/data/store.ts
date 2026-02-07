@@ -111,6 +111,12 @@ export function getFirestoreCredentialErrorHelp(): string | null {
   return lastCredentialErrorHelp;
 }
 
+/** Clear the credential-failed flag so the next request will try Firestore again (e.g. after running gcloud auth application-default login). */
+export function clearFirestoreCredentialFailed(): void {
+  firestoreCredentialFailed = false;
+  lastCredentialErrorHelp = null;
+}
+
 function nextContactId() {
   return `contact-${++contactIdCounter}`;
 }

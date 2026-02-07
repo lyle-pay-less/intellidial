@@ -153,12 +153,29 @@ After setup, verify:
 
 ## Troubleshooting
 
+### Local Firebase auth not working (localhost)
+
+1. **Add localhost to Authorized domains**  
+   Firebase blocks sign-in from domains not in the list.  
+   - [Firebase Console](https://console.firebase.google.com/) → your project → **Authentication** → **Settings** → **Authorized domains**  
+   - Click **Add domain** and add **`localhost`**  
+   - Save. Without this, Google/Microsoft popup will fail with "unauthorized domain".
+
+2. **Create `intellidial/.env.local`** with client config so the app uses real Firebase (not the mock dev user):  
+   - Copy `intellidial/.env.local.example` to `intellidial/.env.local`  
+   - Values are in `cloudbuild.yaml` (build args) or Firebase Console → Project settings → Your apps  
+   - Restart the dev server (`npm run dev`).
+
+3. **Server (Firestore) on local**  
+   You already ran `gcloud auth application-default login` and `gcloud auth application-default set-quota-project intellidial-39ca7`. The Admin SDK will use ADC; no need for `FIREBASE_ADMIN_*` or a key file unless you prefer one.
+
 ### "Firebase Auth not configured" error
-- Check `.env` file has all `NEXT_PUBLIC_FIREBASE_*` variables
+- Check `.env` or `.env.local` in the **intellidial** folder has all `NEXT_PUBLIC_FIREBASE_*` variables
 - Restart dev server after adding env vars
 - Check `next.config.ts` is loading `.env` correctly
 
 ### OAuth providers not working
+- **Add `localhost` to Authorized domains** (Authentication → Settings → Authorized domains) — most common fix for local
 - Verify provider is enabled in Firebase Console
 - Check redirect URIs are configured correctly
 - Check browser console for CORS/redirect errors

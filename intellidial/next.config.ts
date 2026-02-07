@@ -2,17 +2,19 @@ import type { NextConfig } from "next";
 import path from "path";
 import fs from "fs";
 
-// Load .env from root directory
+// Load .env and .env.local from repo root (doctor/) so service account / Firebase Admin vars are available
 // In Cloud Run, environment variables come from Secret Manager (set in Cloud Run config)
-const envPath = path.resolve(__dirname, "..", ".env");
-
-if (fs.existsSync(envPath)) {
-  fs.readFileSync(envPath, "utf8")
-    .split("\n")
-    .forEach((line) => {
-      const m = line.match(/^([^#=]+)=(.*)$/);
-      if (m) process.env[m[1].trim()] = m[2].trim();
-    });
+const rootDir = path.resolve(__dirname, "..");
+for (const name of [".env", ".env.local"]) {
+  const envPath = path.join(rootDir, name);
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, "utf8")
+      .split("\n")
+      .forEach((line) => {
+        const m = line.match(/^([^#=]+)=(.*)$/);
+        if (m) process.env[m[1].trim()] = m[2].trim();
+      });
+  }
 }
 
 const nextConfig: NextConfig = {

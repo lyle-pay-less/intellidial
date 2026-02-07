@@ -26,6 +26,7 @@ function getAdminApp() {
   const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
   if (projectId && clientEmail && privateKey) {
+    console.log("[Firebase Admin] Using credentials from FIREBASE_ADMIN_* env vars");
     return initializeApp({
       credential: cert({
         projectId,
@@ -37,6 +38,7 @@ function getAdminApp() {
 
   // Option 2: Service account JSON file path
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    console.log("[Firebase Admin] Using credentials from GOOGLE_APPLICATION_CREDENTIALS:", process.env.GOOGLE_APPLICATION_CREDENTIALS);
     return initializeApp({
       credential: cert(process.env.GOOGLE_APPLICATION_CREDENTIALS),
     });
@@ -45,7 +47,7 @@ function getAdminApp() {
   // Option 3: Application Default Credentials (works on GCP or with gcloud CLI)
   // This will use ADC if available (e.g., when running on GCP, or after `gcloud auth application-default login`)
   try {
-    console.log("[Firebase Admin] Attempting to initialize with Application Default Credentials...");
+    console.log("[Firebase Admin] No service account env found; using Application Default Credentials (ADC)...");
     const app = initializeApp({
       credential: applicationDefault(),
       projectId: projectId || "intellidial-39ca7", // Explicitly set project ID for ADC
