@@ -2793,7 +2793,7 @@ function ResultsTab({
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-900 focus:border-teal-500 outline-none"
         />
         <span className="text-xs text-slate-500">
-          {filteredContacts.length} of {contacts.length} shown
+          {filteredResultRows.length} of {resultRows.length} calls shown
         </span>
         {onSyncCalls && (
           <button
