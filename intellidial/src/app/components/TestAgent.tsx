@@ -284,7 +284,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
               <div className="absolute inset-0 rounded-xl bg-cyan-400/20 animate-ping opacity-50" style={{ animationDuration: '2s', animationDelay: '0.5s' }}></div>
               <button
                 type="button"
-                onClick={startTest}
+                onClick={() => startTest()}
                 className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.05] active:scale-[0.98] border border-white/20 animate-heartbeat cursor-pointer shadow-lg shadow-teal-400/30"
               >
                 <Mic className="w-5 h-5 relative z-10" />
