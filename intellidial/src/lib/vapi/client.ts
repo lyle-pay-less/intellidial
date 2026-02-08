@@ -386,8 +386,8 @@ export async function buildAssistantConfig(
   if (webhookUrl) {
     payload.server = { url: webhookUrl };
     payload.serverMessages = ["end-of-call-report"];
-    // VAPI docs: use recordingEnabled so end-of-call-report includes artifact.recording URL
-    payload.artifactPlan = { recordingEnabled: true };
+    // VAPI docs: recording.enabled so end-of-call-report includes artifact.recording URL
+    payload.artifactPlan = { recording: { enabled: true } };
   } else if (forWebTest) {
     // Explicitly clear server so PATCH doesn't leave an old URL (which causes daily-error on web).
     (payload as Record<string, unknown>).server = null;

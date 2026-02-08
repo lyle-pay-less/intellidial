@@ -17,10 +17,6 @@ type Project = {
   agentName?: string | null;
   /** Agent avatar/picture URL — shown on card when set */
   agentImageUrl?: string | null;
-  /** Agent identity name (voice agent) — shown on card when set */
-  agentName?: string | null;
-  /** Agent avatar/picture URL — shown on card when set */
-  agentImageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
