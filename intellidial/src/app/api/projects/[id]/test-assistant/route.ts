@@ -38,7 +38,7 @@ export async function GET(
       );
     }
 
-    // Build project for VAPI
+    // Build project for VAPI (same config as real calls, including business context)
     const projectForVapi: ProjectForVapi = {
       id: project.id,
       name: project.name,
@@ -47,6 +47,7 @@ export async function GET(
       agentNumber: project.agentNumber,
       agentVoice: project.agentVoice,
       userGoal: project.userGoal,
+      businessContext: project.businessContext,
       agentInstructions: project.agentInstructions,
       goal: project.goal,
       tone: project.tone,
@@ -56,12 +57,18 @@ export async function GET(
       structuredOutputId: project.structuredOutputId,
     };
 
-    // Create or update assistant
-    const assistantId = await createOrUpdateAssistant(projectForVapi);
+    // Use a dedicated test assistant (no server URL) so browser tests don't drop with daily-error.
+    // VAPI/Daily can't reach localhost; when the assistant has a server URL, web calls often fail.
+    // ?refresh=1 forces creating a new test assistant (e.g. after fixing config or clearing stale state).
+    const refresh = req.nextUrl.searchParams.get("refresh") === "1";
+    const assistantId = await createOrUpdateAssistant(projectForVapi, {
+      forWebTest: true,
+      overrideAssistantId: refresh ? undefined : (project.testAssistantId ?? undefined),
+    });
 
-    // Save assistantId back to project if it's new
-    if (!project.assistantId || project.assistantId !== assistantId) {
-      await updateProject(projectId, { assistantId });
+    // Persist test assistant id so we reuse one per project (or update after refresh)
+    if (refresh || !project.testAssistantId || project.testAssistantId !== assistantId) {
+      await updateProject(projectId, { testAssistantId: assistantId });
     }
 
     // Get public key from env

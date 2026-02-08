@@ -11,8 +11,62 @@ const VAPI_BASE = "https://api.vapi.ai";
 /** Project shape we need for building assistant config (id + assistantId/structuredOutputId optional for update). */
 export type ProjectForVapi = Pick<
   ProjectDoc,
-  "name" | "agentName" | "agentCompany" | "agentNumber" | "agentVoice" | "userGoal" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields"
+  "name" | "agentName" | "agentCompany" | "agentNumber" | "agentVoice" | "userGoal" | "businessContext" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields"
 > & { id: string; assistantId?: string | null; structuredOutputId?: string | null };
+
+/** 11labs voice settings (from API or defaults when fetch not available). */
+export type ElevenLabsVoiceSettings = {
+  stability: number;
+  similarity_boost: number;
+  style: number;
+  use_speaker_boost: boolean;
+  speed: number;
+};
+
+/** Fallback when we can't fetch per-voice settings from ElevenLabs. Exported for voice-preview fallback. */
+export const ELEVENLABS_VOICE_DEFAULTS: ElevenLabsVoiceSettings = {
+  stability: 0.5,
+  similarity_boost: 0.75,
+  style: 0,
+  use_speaker_boost: true,
+  speed: 1.0,
+};
+
+const ELEVENLABS_SETTINGS_URL = "https://api.elevenlabs.io/v1/voices";
+
+/**
+ * Fetch this voice's saved settings from ElevenLabs (each voice has its own in the UI).
+ * Uses ELEVEN_LABS_API_KEY. Returns null if key missing or request fails — then use ELEVENLABS_VOICE_DEFAULTS.
+ */
+export async function fetchElevenLabsVoiceSettings(
+  voiceId: string
+): Promise<ElevenLabsVoiceSettings | null> {
+  const apiKey = process.env.ELEVEN_LABS_API_KEY?.trim();
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`${ELEVENLABS_SETTINGS_URL}/${voiceId}/settings`, {
+      headers: { "xi-api-key": apiKey },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      stability?: number;
+      similarity_boost?: number;
+      style?: number;
+      use_speaker_boost?: boolean;
+      speed?: number;
+    };
+    return {
+      stability: typeof data.stability === "number" ? data.stability : ELEVENLABS_VOICE_DEFAULTS.stability,
+      similarity_boost: typeof data.similarity_boost === "number" ? data.similarity_boost : ELEVENLABS_VOICE_DEFAULTS.similarity_boost,
+      style: typeof data.style === "number" ? data.style : ELEVENLABS_VOICE_DEFAULTS.style,
+      use_speaker_boost: typeof data.use_speaker_boost === "boolean" ? data.use_speaker_boost : ELEVENLABS_VOICE_DEFAULTS.use_speaker_boost,
+      speed: typeof data.speed === "number" ? data.speed : ELEVENLABS_VOICE_DEFAULTS.speed,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /** VAPI assistant create/update payload (subset we use). */
 type VapiAssistantPayload = {
@@ -22,7 +76,18 @@ type VapiAssistantPayload = {
     model: string;
     messages: Array<{ role: "system"; content: string }>;
   };
-  voice: { provider: string; voiceId: string };
+  voice: {
+    provider: string;
+    voiceId: string;
+    /** 11labs: speech speed (0.7–1.2). Passed so calls match ElevenLabs UI. */
+    speed?: number;
+    /** 11labs: stability (0–1). */
+    stability?: number;
+    /** 11labs: similarity_boost (0–1). */
+    similarity_boost?: number;
+    /** 11labs: model (e.g. eleven_multilingual_v2). */
+    modelId?: string;
+  };
   firstMessage?: string;
   transcriber?: { provider: string; model: string; language: string };
   maxDurationSeconds?: number;
@@ -36,6 +101,8 @@ type VapiAssistantPayload = {
     recording?: { enabled?: boolean };
     structuredOutputIds?: string[];
   };
+  /** When the assistant says one of these, VAPI ends the call (e.g. after saying goodbye). */
+  endCallPhrases?: string[];
 };
 
 /** VAPI outbound call payload. */
@@ -121,12 +188,9 @@ export async function listPhoneNumbers(): Promise<VapiPhoneNumberOption[]> {
   }
 }
 
-/** Map dropdown value to 11labs voiceId. Add more as needed. */
-const VOICE_IDS: Record<string, string> = {
-  // Default
-  default: "21m00Tcm4TlvDq8ikWAM", // Rachel
-  
-  // Female voices
+/** Map dropdown value to ElevenLabs voiceId. Used for 11labs provider and for voice preview. */
+const ELEVENLABS_VOICE_IDS: Record<string, string> = {
+  default: "L5zW3PqYZoWAeS4J1qMV", // Dr. Samuel Rosso (SA default; was Rachel)
   rachel: "21m00Tcm4TlvDq8ikWAM",
   bella: "EXAVITQu4vr4xnSDxMaL",
   elli: "MF3mGyEYCl7XYWbV9V6O",
@@ -136,14 +200,46 @@ const VOICE_IDS: Record<string, string> = {
   jessi: "TxGEqnHWrfWFTfGW9XjX",
   nicole: "piTKgcLEGmPE4e6mEKli",
   sky: "pFZP5JQG7iQjIQuC4Bku",
-  
-  // Male voices
   adam: "pNInz6obpgDQGcFmaJgB",
   antoni: "ErXwobaYiN019PkySvjV",
   sam: "yoZ06aMxZJJ28mfd3POQ",
   arnold: "VR6AewLTigWG4xSOukaG",
   daniel: "onwK4e9ZLuTAKqWW03F9",
+  // South African (from your ElevenLabs Voice Library)
+  samuel_rosso: "L5zW3PqYZoWAeS4J1qMV",   // Dr. Samuel Rosso – Retired Doctor
+  thandi: "BcpjRWrYhDBHmOnetmBl",         // Clear and Engaging Narrator
+  thabiso: "j32TutubsmjTPYaEhg5T",        // Bright, Energetic and Engaging
+  musole: "zY7DEQPsInIw5phF8qoH",         // Smokey, Stoic, and Measured
+  gawain: "x52Gqgso2pdbdr7KngsJ",         // The Gawain – Confident, Clear and Direct
+  crystal: "zd1c6qDiwPV3b24VZtor",         // Casual conversationalist
+  emma_lilliana: "0z8S749Xe6jLCD34QXl1",  // Emma Lilliana – Soft, Warm and Gentle
+  hannah: "xeBpkkuzgxa0IwKt7NTP",         // Formal and Professional
+  cheyenne: "atf1ppeJGCYFBlCLZ26e",        // Calm and Professional
+  ryan: "ZSpZE1MGLI5tiZBKkT91",            // Ryan – Serious, Round, and Clear
+  // Legacy keys (no longer in library) – fallback to first SA voice
+  shrey: "L5zW3PqYZoWAeS4J1qMV",
+  darwin: "L5zW3PqYZoWAeS4J1qMV",
+  opsy: "L5zW3PqYZoWAeS4J1qMV",
 };
+
+/** PlayHT shut down (acquired by Meta). Legacy keys mapped to 11labs default so old projects still work. */
+const PLAYHT_SA_VOICES_LEGACY = ["playht_luke", "playht_ayanda", "playht_leah"];
+
+/** Get ElevenLabs voice ID for a voice key. Used for voice preview (preview only supports 11labs). */
+export function getVoiceIdForKey(voiceKey: string): string {
+  const key = (voiceKey ?? "default").trim().toLowerCase() || "default";
+  return ELEVENLABS_VOICE_IDS[key] ?? ELEVENLABS_VOICE_IDS.default;
+}
+
+/** Returns { provider, voiceId } for VAPI. PlayHT shut down — legacy playht_* keys fall back to 11labs default. */
+export function getVoiceProviderAndId(voiceKey: string): { provider: string; voiceId: string } {
+  const key = (voiceKey ?? "default").trim().toLowerCase() || "default";
+  if (PLAYHT_SA_VOICES_LEGACY.includes(key)) {
+    return { provider: "11labs", voiceId: ELEVENLABS_VOICE_IDS.default };
+  }
+  const voiceId = ELEVENLABS_VOICE_IDS[key] ?? ELEVENLABS_VOICE_IDS.default;
+  return { provider: "11labs", voiceId };
+}
 
 /**
  * Build the system prompt for the VAPI assistant from project config.
@@ -152,6 +248,26 @@ const VOICE_IDS: Record<string, string> = {
  */
 function buildSystemPrompt(project: ProjectForVapi): string {
   const parts: string[] = [];
+  // Who the agent is calling (VAPI fills {{customer.name}} and {{customer.number}} per call)
+  parts.push(
+    "CURRENT CALL: You are calling {{customer.name}} at {{customer.number}}. " +
+    "Use their name to personalize when you have it (e.g. 'Hi {{customer.name}}'). " +
+    "If the person's name is not provided, say 'Hi' or 'Hello'."
+  );
+  parts.push(
+    "IDENTITY: You work for this company. When referring to the business — hours, location, services, contact details — always use 'we', 'our', and 'us' (e.g. 'We are open 9 to 5', 'Our office is at...', 'You can reach us at...'). Never say 'they' or 'the company' as if you are external."
+  );
+  parts.push(
+    "ENDING THE CALL: When the person says goodbye, bye, hang up, or that they need to go, say a brief closing and end the call. Use a natural sign-off such as: Goodbye, Bye, Cheers, Take care, Sharp (SA), Thanks bye, Have a good one, or e.g. 'Thanks for your time. Goodbye.' Do not keep talking. 'Hang up' or 'please hang up' means they want to end this call now — say goodbye and end the call; it does NOT mean they want to be removed from the list."
+  );
+  parts.push(
+    "COMPLIANCE (South Africa / POPIA): If the person clearly asks to stop being called in future, to be removed from the list, or not to be contacted again, acknowledge and say you will ensure they are not called again. Do not confuse this with simply ending the current call (goodbye / hang up)."
+  );
+  const businessContext = (project.businessContext ?? "").trim();
+  if (businessContext) {
+    parts.push("BUSINESS CONTEXT (use this to answer questions about the company, location, hours, services):");
+    parts.push(businessContext);
+  }
   const agentName = typeof project.agentName === "string" ? project.agentName.trim() : "";
   const agentCompany = typeof project.agentCompany === "string" ? project.agentCompany.trim() : "";
   const agentNumber = typeof project.agentNumber === "string" ? project.agentNumber.trim() : "";
@@ -186,17 +302,41 @@ function getWebhookBaseUrl(): string | undefined {
 /**
  * Build the full VAPI assistant payload from a project.
  * Maps project fields to VAPI assistant schema (system prompt, voice, transcriber, etc.).
- * When VAPI_WEBHOOK_BASE_URL (or NEXT_PUBLIC_APP_URL) is set, adds server URL + serverMessages
- * so we receive end-of-call-report with transcript and recording.
+ * When VAPI_WEBHOOK_BASE_URL (or NEXT_PUBLIC_APP_URL) is set and not forWebTest, adds server URL
+ * + serverMessages so we receive end-of-call-report with transcript and recording.
+ *
+ * forWebTest: omit server URL so browser test calls don't fail. VAPI/Daily can't reach localhost,
+ * so web calls with a server URL often get daily-error and drop immediately.
+ *
+ * Voice: we only send provider ("11labs") and voiceId. We never send an ElevenLabs API key.
+ * TTS on production calls is done by VAPI; keep your ElevenLabs key out of VAPI dashboard
+ * if you want TTS cost to run through VAPI only. Use ELEVEN_LABS_API_KEY in this app
+ * for voice preview only.
+ * For 11labs we fetch this voice's saved settings from ElevenLabs so each voice sounds as in the UI.
  */
-export function buildAssistantConfig(project: ProjectForVapi): VapiAssistantPayload {
+export async function buildAssistantConfig(
+  project: ProjectForVapi,
+  options?: { forWebTest?: boolean }
+): Promise<VapiAssistantPayload> {
+  const forWebTest = options?.forWebTest === true;
   const systemContent = buildSystemPrompt(project);
   const displayName = (project.agentName ?? project.name ?? "Agent").trim().slice(0, 40);
   const name = displayName || "Agent";
-  const base = getWebhookBaseUrl();
+  const base = forWebTest ? undefined : getWebhookBaseUrl();
   const webhookUrl = base ? `${base.replace(/\/$/, "")}/api/webhooks/vapi/call-ended` : undefined;
   const voiceKey = (project.agentVoice ?? "default").trim().toLowerCase() || "default";
-  const voiceId = VOICE_IDS[voiceKey] ?? VOICE_IDS.default;
+  const { provider: voiceProvider, voiceId } = getVoiceProviderAndId(voiceKey);
+
+  const voicePayload: VapiAssistantPayload["voice"] = {
+    provider: voiceProvider,
+    voiceId,
+  };
+  if (voiceProvider === "11labs") {
+    const settings = await fetchElevenLabsVoiceSettings(voiceId);
+    const s = settings ?? ELEVENLABS_VOICE_DEFAULTS;
+    voicePayload.speed = s.speed;
+    // VAPI only accepts provider, voiceId, speed for 11labs; stability/similarity_boost/modelId are rejected
+  }
 
   const payload: VapiAssistantPayload = {
     name,
@@ -205,29 +345,60 @@ export function buildAssistantConfig(project: ProjectForVapi): VapiAssistantPayl
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemContent }],
     },
-    voice: {
-      provider: "11labs",
-      voiceId,
-    },
+    voice: voicePayload,
     firstMessage: "Hi, good day!",
     transcriber: {
       provider: "deepgram",
       model: "nova-2",
       language: "en",
     },
-    maxDurationSeconds: 180,
+    maxDurationSeconds: 600, // 10 min (was 180 = 3 min; increase if you need longer calls)
     silenceTimeoutSeconds: 30,
     responseDelaySeconds: 0.5,
+    endCallPhrases: [
+      "Goodbye",
+      "Bye",
+      "Bye bye",
+      "Cheers",
+      "Cheers bye",
+      "Take care",
+      "Take care bye",
+      "Thanks bye",
+      "Thanks for your time. Goodbye.",
+      "No problem. Goodbye.",
+      "Okay bye",
+      "Right, goodbye",
+      "Have a good one",
+      "Have a good day",
+      "Stay well",
+      "Laters",
+      "Catch you later",
+      "Talk later",
+      "Bye for now",
+      "Sharp",
+      "Sharp sharp",
+      "Shot",
+      "Lekker, bye",
+      "Good one",
+    ],
   };
 
   if (webhookUrl) {
     payload.server = { url: webhookUrl };
     payload.serverMessages = ["end-of-call-report"];
-    payload.artifactPlan = { recording: { enabled: true } };
+    // VAPI docs: use recordingEnabled so end-of-call-report includes artifact.recording URL
+    payload.artifactPlan = { recordingEnabled: true };
+  } else if (forWebTest) {
+    // Explicitly clear server so PATCH doesn't leave an old URL (which causes daily-error on web).
+    (payload as Record<string, unknown>).server = null;
+    (payload as Record<string, unknown>).serverMessages = null;
+    (payload as Record<string, unknown>).artifactPlan = null;
   }
-  if (project.structuredOutputId?.trim()) {
-    payload.artifactPlan = payload.artifactPlan ?? {};
-    payload.artifactPlan.structuredOutputIds = [project.structuredOutputId.trim()];
+  if (project.structuredOutputId?.trim() && !forWebTest) {
+    payload.artifactPlan = {
+      ...(payload.artifactPlan ?? {}),
+      structuredOutputIds: [project.structuredOutputId.trim()],
+    };
   }
 
   return payload;
@@ -331,8 +502,11 @@ export async function ensureStructuredOutput(project: ProjectForVapi): Promise<s
  * Create a new VAPI assistant from project config.
  * Returns the assistant id. Throws on API error.
  */
-export async function createAssistant(project: ProjectForVapi): Promise<string> {
-  const payload = buildAssistantConfig(project);
+export async function createAssistant(
+  project: ProjectForVapi,
+  options?: { forWebTest?: boolean }
+): Promise<string> {
+  const payload = await buildAssistantConfig(project, options);
   const res = await fetch(`${VAPI_BASE}/assistant`, {
     method: "POST",
     headers: getVapiHeaders(),
@@ -360,9 +534,10 @@ export async function createAssistant(project: ProjectForVapi): Promise<string> 
  */
 export async function updateAssistant(
   assistantId: string,
-  project: ProjectForVapi
+  project: ProjectForVapi,
+  options?: { forWebTest?: boolean }
 ): Promise<void> {
-  const payload = buildAssistantConfig(project);
+  const payload = await buildAssistantConfig(project, options);
   const res = await fetch(`${VAPI_BASE}/assistant/${assistantId}`, {
     method: "PATCH",
     headers: getVapiHeaders(),
@@ -384,15 +559,30 @@ export async function updateAssistant(
 
 /**
  * Create or update the VAPI assistant for this project.
- * If project.assistantId is set, PATCH that assistant; otherwise POST a new one.
+ * If project.assistantId is set (and not using overrideAssistantId), PATCH that assistant; otherwise POST a new one.
  * Returns the assistant id (existing or newly created).
+ *
+ * Options:
+ * - forWebTest: build config without server URL so browser test calls don't drop (VAPI can't reach localhost).
+ * - overrideAssistantId: use this id for update instead of project.assistantId (e.g. test assistant).
  */
-export async function createOrUpdateAssistant(project: ProjectForVapi): Promise<string> {
-  if (project.assistantId?.trim()) {
-    await updateAssistant(project.assistantId.trim(), project);
+export async function createOrUpdateAssistant(
+  project: ProjectForVapi,
+  options?: { forWebTest?: boolean; overrideAssistantId?: string }
+): Promise<string> {
+  const forWebTest = options?.forWebTest === true;
+  const overrideId = options?.overrideAssistantId?.trim();
+
+  if (overrideId) {
+    await updateAssistant(overrideId, project, { forWebTest });
+    return overrideId;
+  }
+  // When forWebTest, never update the main assistant (would remove server URL). Create a new test assistant instead.
+  if (project.assistantId?.trim() && !forWebTest) {
+    await updateAssistant(project.assistantId.trim(), project, { forWebTest });
     return project.assistantId.trim();
   }
-  return createAssistant(project);
+  return createAssistant(project, { forWebTest });
 }
 
 /**
@@ -500,10 +690,21 @@ export type VapiCallResponse = {
   assistantId?: string | null;
   artifact?: {
     transcript?: string | null;
-    recording?: { url?: string | null } | null;
+    /** VAPI may return recording as string URL or as { url } */
+    recording?: string | { url?: string | null } | null;
     structuredOutputs?: VapiStructuredOutputs | null;
   } | null;
 };
+
+/** Extract recording URL from VAPI artifact (handles recording as string or { url }). */
+export function getRecordingUrl(
+  recording: string | { url?: string | null } | null | undefined
+): string | undefined {
+  if (!recording) return undefined;
+  if (typeof recording === "string" && recording.trim()) return recording.trim();
+  const url = (recording as { url?: string | null }).url;
+  return typeof url === "string" && url.trim() ? url.trim() : undefined;
+}
 
 /**
  * Map VAPI artifact.structuredOutputs to our capturedData (keyed by capture field key).

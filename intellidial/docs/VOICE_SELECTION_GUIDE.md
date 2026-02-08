@@ -48,6 +48,13 @@ So yes, we're using **VAPI** as the platform, but **11labs** is the voice provid
 
 ---
 
+## Cost and API key usage
+
+- **Production calls:** TTS is done by **VAPI**. We only send `provider: "11labs"` and `voiceId`; we never send your ElevenLabs API key to VAPI. So **TTS cost on real calls runs through VAPI** as long as you do **not** add your ElevenLabs API key in the VAPI dashboard (Settings → Integrations). If you add it there, VAPI will use your key and your ElevenLabs account is charged.
+- **Voice preview (Test voice):** The app uses **`ELEVEN_LABS_API_KEY`** only in `/api/voice-preview`. That route is the only place we call ElevenLabs directly; it is used solely for the short preview when you click "Test voice" in the dashboard. No production calls use this key.
+
+---
+
 ## How Voice Selection Works
 
 ### Current Flow
@@ -76,6 +83,54 @@ So yes, we're using **VAPI** as the platform, but **11labs** is the voice provid
 - `buildAssistantConfig()` reads `project.agentVoice`
 - Maps to 11labs voiceId
 - Includes in VAPI assistant payload
+
+---
+
+## South African voices (PlayHT — no longer available)
+
+**PlayHT shut down** (acquired by Meta; service ended by Dec 2025). We previously offered South African English voices (Luke, Ayanda, Leah) via PlayHT; those options have been removed from the Voice dropdown.
+
+- Projects that had a PlayHT voice selected now fall back to **Default (Rachel)** so calls still work.
+- For a less American sound you can try **Daniel – British Accent** (ElevenLabs); there is no South African English option in the app at this time.
+
+---
+
+## South African voices (PlayHT)
+
+To avoid American accents that make callers immediately recognise an AI, we support **South African English** voices via **PlayHT**.
+
+### Available voices
+
+In the Voice dropdown (Instructions tab), the first options are:
+
+- **Luke (South African)** – Male, award-winning narration
+- **Ayanda (South African)** – Engaging
+- **Leah (South African)** – Female, professional
+
+These use `provider: "playht"` and PlayHT prebuilt voice IDs (`luke`, `ayanda`, `leah`). All other options use ElevenLabs (`provider: "11labs"`).
+
+### Setup (required for South African voices)
+
+1. **PlayHT account**  
+   Sign up at [play.ht](https://play.ht) and subscribe to an API plan (needed for TTS).
+
+2. **API keys**  
+   In PlayHT: [API Access](https://play.ht/studio/api-access) → copy **User ID** and **Secret Key**.
+
+3. **VAPI dashboard**  
+   In [VAPI → Settings → Integrations](https://dashboard.vapi.ai/settings/integrations), open the **PlayHT** section and paste your PlayHT User ID and Secret Key. Save.
+
+4. **Use in IntelliDial**  
+   In the project Instructions tab, choose **Luke**, **Ayanda**, or **Leah** from the Voice dropdown, save, and run a real call to test (e.g. “Talk to your agent”). No need to set `ELEVEN_LABS_API_KEY` for these voices.
+
+### Voice preview
+
+The in-app **“Test voice”** button uses ElevenLabs only, so it does **not** play a preview for South African (PlayHT) voices. For those, use **“Talk to your agent”** to test on a real call.
+
+### Implementation details
+
+- **VAPI client** (`src/lib/vapi/client.ts`): `getVoiceProviderAndId(voiceKey)` returns `{ provider: "playht", voiceId: "luke" }` (or `ayanda` / `leah`) for keys `playht_luke`, `playht_ayanda`, `playht_leah`; otherwise `{ provider: "11labs", voiceId: "..." }`.
+- **UI**: When a PlayHT voice is selected, a note under the Voice field explains PlayHT setup and that preview is via a real call.
 
 ---
 
@@ -466,6 +521,201 @@ async function generateVoicePreview(voiceId: string, text: string = "Hello, this
 - [ ] Voice works in actual calls
 
 ---
+
+## Next Steps
+
+1. **Verify 11labs Voice IDs** - Check current voice IDs are correct
+2. **Research More Voices** - Find popular 11labs voices for your use cases
+3. **Expand List** - Add 5-10 more voices to start
+4. **Test** - Verify each voice works in calls
+5. **Enhance UI** - Group by gender, add descriptions
+6. **Add Preview** - If budget allows (11labs API)
+
+---
+
+## Resources
+
+- **11labs Voices**: https://elevenlabs.io/voice-library
+- **VAPI Voice Docs**: https://docs.vapi.ai/assistant/voice
+- **11labs API Docs**: https://elevenlabs.io/docs/api-reference
+
+---
+
+## Summary
+
+**Architecture**: 
+- **VAPI** = Platform (handles calls, webhooks)
+- **11labs** = Voice provider (VAPI uses 11labs for TTS)
+- We configure: `{ provider: "11labs", voiceId: "..." }` in VAPI assistant config
+
+**Current State**: ✅ Basic voice selection already works
+- Dropdown exists
+- Maps to 11labs voice IDs
+- Sent to VAPI correctly
+
+**To Expand**: Add more voices to static list (simplest)
+- Expand `AGENT_VOICES` array
+- Add corresponding 11labs voice IDs to `VOICE_IDS` mapping
+
+**Future**: Add preview, dynamic loading, recommendations
+
+**Recommended First Step**: Expand `AGENT_VOICES` array with 5-10 more popular 11labs voices, verify voice IDs are correct, test in calls.
+
+## Next Steps
+
+1. **Verify 11labs Voice IDs** - Check current voice IDs are correct
+2. **Research More Voices** - Find popular 11labs voices for your use cases
+3. **Expand List** - Add 5-10 more voices to start
+4. **Test** - Verify each voice works in calls
+5. **Enhance UI** - Group by gender, add descriptions
+6. **Add Preview** - If budget allows (11labs API)
+
+---
+
+## Resources
+
+- **11labs Voices**: https://elevenlabs.io/voice-library
+- **VAPI Voice Docs**: https://docs.vapi.ai/assistant/voice
+- **11labs API Docs**: https://elevenlabs.io/docs/api-reference
+
+---
+
+## Summary
+
+**Architecture**: 
+- **VAPI** = Platform (handles calls, webhooks)
+- **11labs** = Voice provider (VAPI uses 11labs for TTS)
+- We configure: `{ provider: "11labs", voiceId: "..." }` in VAPI assistant config
+
+**Current State**: ✅ Basic voice selection already works
+- Dropdown exists
+- Maps to 11labs voice IDs
+- Sent to VAPI correctly
+
+**To Expand**: Add more voices to static list (simplest)
+- Expand `AGENT_VOICES` array
+- Add corresponding 11labs voice IDs to `VOICE_IDS` mapping
+
+**Future**: Add preview, dynamic loading, recommendations
+
+**Recommended First Step**: Expand `AGENT_VOICES` array with 5-10 more popular 11labs voices, verify voice IDs are correct, test in calls.
+
+## Next Steps
+
+1. **Verify 11labs Voice IDs** - Check current voice IDs are correct
+2. **Research More Voices** - Find popular 11labs voices for your use cases
+3. **Expand List** - Add 5-10 more voices to start
+4. **Test** - Verify each voice works in calls
+5. **Enhance UI** - Group by gender, add descriptions
+6. **Add Preview** - If budget allows (11labs API)
+
+---
+
+## Resources
+
+- **11labs Voices**: https://elevenlabs.io/voice-library
+- **VAPI Voice Docs**: https://docs.vapi.ai/assistant/voice
+- **11labs API Docs**: https://elevenlabs.io/docs/api-reference
+
+---
+
+## Summary
+
+**Architecture**: 
+- **VAPI** = Platform (handles calls, webhooks)
+- **11labs** = Voice provider (VAPI uses 11labs for TTS)
+- We configure: `{ provider: "11labs", voiceId: "..." }` in VAPI assistant config
+
+**Current State**: ✅ Basic voice selection already works
+- Dropdown exists
+- Maps to 11labs voice IDs
+- Sent to VAPI correctly
+
+**To Expand**: Add more voices to static list (simplest)
+- Expand `AGENT_VOICES` array
+- Add corresponding 11labs voice IDs to `VOICE_IDS` mapping
+
+**Future**: Add preview, dynamic loading, recommendations
+
+**Recommended First Step**: Expand `AGENT_VOICES` array with 5-10 more popular 11labs voices, verify voice IDs are correct, test in calls.
+
+## Next Steps
+
+1. **Verify 11labs Voice IDs** - Check current voice IDs are correct
+2. **Research More Voices** - Find popular 11labs voices for your use cases
+3. **Expand List** - Add 5-10 more voices to start
+4. **Test** - Verify each voice works in calls
+5. **Enhance UI** - Group by gender, add descriptions
+6. **Add Preview** - If budget allows (11labs API)
+
+---
+
+## Resources
+
+- **11labs Voices**: https://elevenlabs.io/voice-library
+- **VAPI Voice Docs**: https://docs.vapi.ai/assistant/voice
+- **11labs API Docs**: https://elevenlabs.io/docs/api-reference
+
+---
+
+## Summary
+
+**Architecture**: 
+- **VAPI** = Platform (handles calls, webhooks)
+- **11labs** = Voice provider (VAPI uses 11labs for TTS)
+- We configure: `{ provider: "11labs", voiceId: "..." }` in VAPI assistant config
+
+**Current State**: ✅ Basic voice selection already works
+- Dropdown exists
+- Maps to 11labs voice IDs
+- Sent to VAPI correctly
+
+**To Expand**: Add more voices to static list (simplest)
+- Expand `AGENT_VOICES` array
+- Add corresponding 11labs voice IDs to `VOICE_IDS` mapping
+
+**Future**: Add preview, dynamic loading, recommendations
+
+**Recommended First Step**: Expand `AGENT_VOICES` array with 5-10 more popular 11labs voices, verify voice IDs are correct, test in calls.
+
+## Next Steps
+
+1. **Verify 11labs Voice IDs** - Check current voice IDs are correct
+2. **Research More Voices** - Find popular 11labs voices for your use cases
+3. **Expand List** - Add 5-10 more voices to start
+4. **Test** - Verify each voice works in calls
+5. **Enhance UI** - Group by gender, add descriptions
+6. **Add Preview** - If budget allows (11labs API)
+
+---
+
+## Resources
+
+- **11labs Voices**: https://elevenlabs.io/voice-library
+- **VAPI Voice Docs**: https://docs.vapi.ai/assistant/voice
+- **11labs API Docs**: https://elevenlabs.io/docs/api-reference
+
+---
+
+## Summary
+
+**Architecture**: 
+- **VAPI** = Platform (handles calls, webhooks)
+- **11labs** = Voice provider (VAPI uses 11labs for TTS)
+- We configure: `{ provider: "11labs", voiceId: "..." }` in VAPI assistant config
+
+**Current State**: ✅ Basic voice selection already works
+- Dropdown exists
+- Maps to 11labs voice IDs
+- Sent to VAPI correctly
+
+**To Expand**: Add more voices to static list (simplest)
+- Expand `AGENT_VOICES` array
+- Add corresponding 11labs voice IDs to `VOICE_IDS` mapping
+
+**Future**: Add preview, dynamic loading, recommendations
+
+**Recommended First Step**: Expand `AGENT_VOICES` array with 5-10 more popular 11labs voices, verify voice IDs are correct, test in calls.
 
 ## Next Steps
 

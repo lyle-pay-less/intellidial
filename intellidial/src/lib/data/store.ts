@@ -570,6 +570,7 @@ export async function duplicateProject(projectId: string, orgId: string): Promis
   });
   await updateProject(newProject.id, {
     captureFields: project.captureFields,
+    businessContext: project.businessContext ?? undefined,
     agentInstructions: project.agentInstructions,
     status: "draft",
   });
@@ -634,23 +635,27 @@ function projectFromFirestoreDoc(
     description: (d.description as string | null) ?? null,
     status: (d.status as ProjectWithId["status"]) ?? "draft",
     assistantId: (d.assistantId as string | null) ?? null,
+    testAssistantId: (d.testAssistantId as string | null) ?? null,
     structuredOutputId: (d.structuredOutputId as string | null) ?? null,
     agentName: (d.agentName as string | null) ?? null,
     agentCompany: (d.agentCompany as string | null) ?? null,
     agentNumber: (d.agentNumber as string | null) ?? null,
     agentPhoneNumberId: (d.agentPhoneNumberId as string | null) ?? null,
     agentVoice: (d.agentVoice as string | null) ?? null,
+    agentImageUrl: (d.agentImageUrl as string | null) ?? null,
     userGoal: (d.userGoal as string | null) ?? null,
     industry: (d.industry as string | null) ?? null,
     tone: (d.tone as string | null) ?? null,
     goal: (d.goal as string | null) ?? null,
     agentQuestions: (d.agentQuestions as ProjectWithId["agentQuestions"]) ?? [],
     captureFields: (d.captureFields as ProjectWithId["captureFields"]) ?? [],
+    businessContext: (d.businessContext as string | null) ?? null,
     agentInstructions: (d.agentInstructions as string | null) ?? null,
     notifyOnComplete: d.notifyOnComplete as boolean | undefined,
     surveyEnabled: (d.surveyEnabled as boolean) ?? false,
     callWindowStart: (d.callWindowStart as string | null) ?? null,
     callWindowEnd: (d.callWindowEnd as string | null) ?? null,
+    googleSheetId: (d.googleSheetId as string | null) ?? null,
     createdAt: (d.createdAt as string) ?? now(),
     updatedAt: (d.updatedAt as string) ?? now(),
   } as ProjectWithId;
@@ -739,7 +744,7 @@ export async function createProject(
 
 export async function updateProject(
   id: string,
-  data: Partial<Pick<ProjectDoc, "name" | "description" | "agentName" | "agentCompany" | "agentNumber" | "agentPhoneNumberId" | "agentVoice" | "userGoal" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "structuredOutputId">>
+  data: Partial<Pick<ProjectDoc, "name" | "description" | "agentName" | "agentCompany" | "agentNumber" | "agentPhoneNumberId" | "agentVoice" | "agentImageUrl" | "userGoal" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "businessContext" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "testAssistantId" | "structuredOutputId" | "googleSheetId">>
 ): Promise<ProjectWithId | null> {
   let project = projects.get(id) ?? null;
   // Load from Firestore if not in memory (e.g. after server restart) so we can still persist
@@ -846,6 +851,7 @@ async function hydrateProjectContacts(projectId: string): Promise<void> {
         phone: (d.phone as string) ?? "",
         name: (d.name as string | null) ?? null,
         status: (d.status as ContactWithId["status"]) ?? "pending",
+        optOut: (d.optOut as boolean | null) ?? null,
         callResult: d.callResult as ContactWithId["callResult"],
         lastVapiCallId: (d.lastVapiCallId as string | null) ?? null,
         vapiCallId: (d.vapiCallId as string | null) ?? null,
@@ -901,7 +907,9 @@ function stripUndefined<T>(obj: T): T {
 
 export async function updateContact(
   contactId: string,
-  data: Partial<Pick<ContactDoc, "status" | "callResult" | "lastVapiCallId" | "vapiCallId">>
+  data: Partial<
+    Pick<ContactDoc, "status" | "callResult" | "optOut" | "lastVapiCallId" | "vapiCallId" | "callHistory">
+  >
 ): Promise<ContactWithId | null> {
   const contact = contacts.get(contactId);
   if (!contact) return null;

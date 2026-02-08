@@ -13,6 +13,14 @@ type Project = {
   description?: string | null;
   industry?: string | null;
   status: string;
+  /** Agent identity name (voice agent) — shown on card when set */
+  agentName?: string | null;
+  /** Agent avatar/picture URL — shown on card when set */
+  agentImageUrl?: string | null;
+  /** Agent identity name (voice agent) — shown on card when set */
+  agentName?: string | null;
+  /** Agent avatar/picture URL — shown on card when set */
+  agentImageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -133,12 +141,19 @@ export default function ProjectsPage() {
             <Link
               key={p.id}
               href={`/dashboard/projects/${p.id}`}
-              className="group relative flex flex-col rounded-2xl border border-slate-200/90 bg-white p-6 shadow-sm transition-all duration-200 hover:border-teal-200 hover:shadow-lg hover:shadow-teal-500/5"
+              className="group flex gap-4 rounded-2xl border-2 border-slate-200 bg-white p-5 shadow-sm transition-all hover:border-teal-200 hover:shadow-md"
             >
-              <div className="mb-4 flex items-start gap-4">
-                {/* Placeholder for gender-neutral AI call agent avatar (professional uniform) */}
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 ring-1 ring-slate-200/80">
-                  <User className="h-6 w-6" aria-hidden />
+              {/* Agent picture: use image when set, otherwise placeholder */}
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400 ring-1 ring-slate-200/80">
+                  {p.agentImageUrl ? (
+                    <img
+                      src={p.agentImageUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <User className="h-6 w-6" aria-hidden />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
@@ -160,10 +175,13 @@ export default function ProjectsPage() {
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    {industryLabel(p.industry)}
+                    {p.agentName ? (
+                      <span className="text-slate-600">{p.agentName}</span>
+                    ) : (
+                      industryLabel(p.industry)
+                    )}
                   </p>
                 </div>
-              </div>
               <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-4">
                 <span className="flex items-center gap-1.5 text-xs text-slate-400">
                   <Calendar className="h-3.5 w-3.5" />

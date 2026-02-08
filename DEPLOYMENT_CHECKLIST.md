@@ -128,7 +128,12 @@
 ☑ Name: `next-public-firebase-messaging-sender-id` - **CREATED**
 ☑ Name: `next-public-firebase-app-id` - **CREATED**
 
-**Note:** These are stored in Secret Manager but will be mapped to environment variables in Cloud Run (using `--set-secrets`).
+#### Additional secrets (see DEPLOY_SECRETS.md for full list and gcloud commands)
+☐ Name: `eleven-labs-api-key` → ELEVEN_LABS_API_KEY (voice preview)
+☐ Name: `google-sheets-service-account-json` → GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON (Export to Sheets)
+☐ Name: `next-public-app-url` → NEXT_PUBLIC_APP_URL (Cloud Run or custom app URL for webhooks + invite emails)
+
+**Note:** All secrets are mapped in Cloud Run via `--set-secrets` in `cloudbuild.yaml`. Full list and create/grant commands: **DEPLOY_SECRETS.md**.
 
 ---
 

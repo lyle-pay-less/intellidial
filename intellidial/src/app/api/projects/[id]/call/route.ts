@@ -95,7 +95,10 @@ export async function POST(
   const byId = new Map(contacts.map((c) => [c.id, c]));
   const toCall = contactIds
     .map((cid) => byId.get(cid))
-    .filter((c): c is NonNullable<typeof c> => c != null && c.projectId === projectId);
+    .filter(
+      (c): c is NonNullable<typeof c> =>
+        c != null && c.projectId === projectId && c.optOut !== true
+    );
 
   if (toCall.length === 0) {
     return NextResponse.json(

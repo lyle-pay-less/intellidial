@@ -6,7 +6,7 @@ import {
   incrementOrgUsage,
 } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
-import { getCall, mapStructuredOutputsToCapturedData } from "@/lib/vapi/client";
+import { getCall, mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
 
 /** Ended reasons that indicate a failed call (no answer, busy, etc.). */
 const FAILED_END_REASONS = new Set([
@@ -232,15 +232,24 @@ export async function GET(
     const callResult = {
       durationSeconds: isFailed ? 0 : durationSeconds,
       transcript: call.artifact?.transcript ?? undefined,
-      recordingUrl: call.artifact?.recording?.url ?? undefined,
+      recordingUrl: getRecordingUrl(call.artifact?.recording),
       attemptedAt,
       ...(capturedData ? { capturedData } : {}),
       ...(failureReason ? { failureReason } : {}),
     };
+    const newEntry = { ...callResult, vapiCallId: call.id };
+    let callHistory = contact.callHistory ?? [];
+    if (callHistory.length === 0 && contact.callResult) {
+      callHistory = [
+        { ...contact.callResult, vapiCallId: contact.lastVapiCallId ?? undefined },
+      ];
+    }
+    callHistory = [...callHistory, newEntry];
 
     await updateContact(contact.id, {
       status: isFailed ? "failed" : "success",
       callResult,
+      callHistory,
       lastVapiCallId: call.id,
       vapiCallId: null,
     });

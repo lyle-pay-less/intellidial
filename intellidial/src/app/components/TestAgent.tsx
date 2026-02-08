@@ -38,6 +38,29 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
 
+  // Suppress known benign errors from triggering Next.js error overlay (Daily, browser audio, etc.)
+  useEffect(() => {
+    const original = console.error.bind(console);
+    console.error = (...args: unknown[]) => {
+      const first = args[0];
+      const s = typeof first === "string" ? first : first != null && typeof (first as Error).message === "string" ? (first as Error).message : "";
+      const combined = `${s} ${args.slice(1).map((a) => (typeof a === "string" ? a : "")).join(" ")}`;
+      if (
+        typeof s === "string" &&
+        (s.includes("ejection") ||
+          s.includes("Meeting has ended") ||
+          s.includes("unsupported input processor") ||
+          combined.includes("audio") && combined.includes("unsupported"))
+      ) {
+        return; // drop so overlay doesn't show
+      }
+      original(...args);
+    };
+    return () => {
+      console.error = original;
+    };
+  }, []);
+
   // Only auto-scroll to bottom when user is already near bottom
   useEffect(() => {
     const container = transcriptContainerRef.current;
@@ -50,7 +73,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
     }
   }, [transcript]);
 
-  const startTest = useCallback(async () => {
+  const startTest = useCallback(async (forceRefresh?: boolean) => {
     setConnecting(true);
     setConnectingMessageIndex(0);
     setError(null);
@@ -63,7 +86,9 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
     }
 
     try {
-      const res = await fetch(`/api/projects/${projectId}/test-assistant`, {
+      // ?refresh=1 forces a new test assistant (no server URL); use if call keeps dropping.
+      const url = `/api/projects/${projectId}/test-assistant${forceRefresh ? "?refresh=1" : ""}`;
+      const res = await fetch(url, {
         headers: {
           "x-user-id": user.uid,
         },
@@ -125,19 +150,50 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
       });
       vapi.on("error", (e: unknown) => {
         clearConnectionTimeout();
-        console.error("[TestAgent] VAPI error:", e);
-        let msg = "Voice error";
+        let msg = "Voice error. Try again.";
         if (e instanceof Error) {
           msg = e.message;
-        } else if (typeof e === "object" && e) {
-          if ("message" in e) {
-            msg = String(e.message);
-          } else if ("error" in e) {
-            msg = String(e.error);
-          } else if ("details" in e) {
-            msg = String(e.details);
+        } else if (typeof e === "object" && e !== null) {
+          const o = e as Record<string, unknown>;
+          const inner = o.error && typeof o.error === "object" ? (o.error as Record<string, unknown>) : null;
+          const raw =
+            typeof o.message === "string" ? o.message
+            : typeof o.errorMsg === "string" ? o.errorMsg
+            : typeof o.error === "string" ? o.error
+            : typeof o.details === "string" ? o.details
+            : inner && typeof inner.errorMsg === "string" ? inner.errorMsg
+            : inner && typeof inner.message === "string" ? inner.message
+            : typeof o.message === "object" && o.message && typeof (o.message as Record<string, unknown>).message === "string"
+              ? (o.message as Record<string, unknown>).message as string
+              : "";
+          if (raw && raw !== "[object Object]") {
+            msg = raw;
+          }
+          // Map common codes to clearer messages
+          const code = typeof o.code === "string" ? o.code : "";
+          if (code && !raw) {
+            if (code.includes("permission") || code.includes("microphone") || code.includes("denied")) {
+              msg = "Microphone access denied. Allow the mic and try again.";
+            } else if (code.includes("network") || code.includes("connection")) {
+              msg = "Connection lost. Check your network and try again.";
+            }
+          }
+          // Daily.co (call layer) error with no detail – often network/firewall or WebRTC
+          if (o.type === "daily-error" && !raw) {
+            msg =
+              "Call connection failed. Check your microphone, allow the site to use it, and try again. If on a VPN or corporate network, try without or use another browser.";
           }
         }
+        if (msg === "[object Object]" || (typeof msg === "string" && msg.includes("object Object"))) {
+          msg = "Voice connection error. Try again.";
+        }
+        // Friendly message for common Daily/VAPI session endings (don't treat as hard error)
+        const isCallEnded = typeof msg === "string" && (msg.includes("ejection") || msg.includes("Meeting has ended"));
+        if (isCallEnded) {
+          msg = "Call ended. You can start a new test call.";
+        }
+        // Always log full error in dev so you can see the real reason in the console
+        console.warn("[TestAgent] VAPI error (full object):", e);
         setError(msg);
         setConnecting(false);
         setCallActive(false);
@@ -157,7 +213,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
       setError(e instanceof Error ? e.message : "Could not start test");
       setConnecting(false);
     }
-  }, [projectId]);
+  }, [projectId, user?.uid]);
 
   const endCall = useCallback(() => {
     if (vapiRef.current) {
@@ -232,7 +288,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
                 className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.05] active:scale-[0.98] border border-white/20 animate-heartbeat cursor-pointer shadow-lg shadow-teal-400/30"
               >
                 <Mic className="w-5 h-5 relative z-10" />
-                <span className="relative z-10">Talk to Agent</span>
+                <span className="relative z-10">Talk to your agent</span>
               </button>
             </div>
           )}
@@ -283,7 +339,21 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
             )}
           </div>
         )}
-        {error && <p className="text-sm text-red-400 text-center">{error}</p>}
+        {error && (
+          <div className="text-center space-y-1">
+            <p className="text-sm text-red-400">{error}</p>
+            {error.includes("Try again") && (
+              <p className="text-xs text-slate-500">Open the browser console (F12 → Console) to see the exact error.</p>
+            )}
+            <button
+              type="button"
+              onClick={() => startTest(true)}
+              className="text-xs text-teal-400 hover:text-teal-300 underline mt-1"
+            >
+              Try again with a fresh test agent
+            </button>
+          </div>
+        )}
         </div>
       </div>
     </div>

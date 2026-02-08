@@ -45,6 +45,12 @@ export async function ensureProjectAssistantId(
 
     if (project.assistantId?.trim()) {
       await createOrUpdateAssistant(project as ProjectForVapi);
+      // VAPI can apply assistant updates asynchronously; a short delay reduces the chance
+      // the first call uses the previous voice (e.g. Rachel instead of the newly saved one).
+      await new Promise((r) => setTimeout(r, 1500));
+      // VAPI can apply assistant updates asynchronously; a short delay reduces the chance
+      // the first call uses the previous voice (e.g. Rachel instead of the newly saved one).
+      await new Promise((r) => setTimeout(r, 1500));
       return project.assistantId.trim();
     }
 

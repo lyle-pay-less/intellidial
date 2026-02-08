@@ -39,8 +39,8 @@ export async function PATCH(
   const updates: Record<string, unknown> = {};
   const keys = [
     "name", "description", "agentName", "agentCompany", "agentNumber", "agentPhoneNumberId", "agentVoice", "userGoal",
-    "industry", "tone", "goal", "agentQuestions", "captureFields", "agentInstructions",
-    "status", "notifyOnComplete", "surveyEnabled", "callWindowStart", "callWindowEnd",
+    "industry", "tone", "goal", "agentQuestions", "captureFields", "businessContext", "agentInstructions",
+    "status", "notifyOnComplete", "surveyEnabled", "callWindowStart", "callWindowEnd", "googleSheetId",
   ] as const;
   for (const key of keys) {
     if (body[key] !== undefined) updates[key] = body[key];

@@ -21,6 +21,9 @@ export type CallResult = {
   failureReason?: string;
 };
 
+/** One call in history (CallResult + VAPI call id for idempotency). */
+export type CallResultEntry = CallResult & { vapiCallId?: string };
+
 /** Firestore: users (collection). Doc id = auth uid. */
 export type UserDoc = {
   email: string;
@@ -44,6 +47,8 @@ export type ProjectDoc = {
   status: ProjectStatus;
   /** VAPI assistant ID (set when agent is created for calls) */
   assistantId?: string | null;
+  /** VAPI assistant ID for in-browser test only (no server URL; avoids daily-error on web) */
+  testAssistantId?: string | null;
   /** VAPI structured output ID (for extracting captureFields from calls) */
   structuredOutputId?: string | null;
   /** Agent identity (used in prompt): name, company calling on behalf of, outbound number */
@@ -54,6 +59,8 @@ export type ProjectDoc = {
   agentPhoneNumberId?: string | null;
   /** VAPI/11labs voice id — e.g. 11labs voiceId for dropdown */
   agentVoice?: string | null;
+  /** Public URL for the agent's avatar/picture (shown on project cards and in UI). */
+  agentImageUrl?: string | null;
   /** User's own goal description (typed or from voice note); primary goal input */
   userGoal?: string | null;
   /** Industry for AI-generated defaults */
@@ -65,6 +72,8 @@ export type ProjectDoc = {
   /** Questions the agent asks */
   agentQuestions?: AgentQuestion[];
   captureFields?: CaptureField[];
+  /** Business context: what the company does, location, hours, etc. (e.g. generated from website URL). */
+  businessContext?: string | null;
   agentInstructions?: string | null;
   notifyOnComplete?: boolean;
   /** Enable post-call survey; recipient can give feedback */
@@ -73,6 +82,8 @@ export type ProjectDoc = {
   callWindowStart?: string | null;
   /** Call window end (HH:mm), e.g. "17:00" */
   callWindowEnd?: string | null;
+  /** Google Sheet ID for export (user shares the sheet with service account). */
+  googleSheetId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,8 +93,13 @@ export type ContactDoc = {
   projectId: string;
   phone: string;
   name?: string | null;
+  /** Do-not-call: set when contact opts out (POPIA / compliance). Skip when starting calls. */
+  optOut?: boolean | null;
   status: ContactStatus;
+  /** Latest call result (for quick access and backward compatibility). */
   callResult?: CallResult | null;
+  /** All call attempts to this contact (newest last). Used when phoning the same person more than once. */
+  callHistory?: CallResultEntry[] | null;
   /** VAPI call ID of last processed end-of-call webhook (idempotency). */
   lastVapiCallId?: string | null;
   /** VAPI call ID of current in-flight call (for polling transcript/recording). */

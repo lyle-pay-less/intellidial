@@ -26,6 +26,7 @@ import {
   ClipboardList,
   Target,
   MessageCircle,
+  Globe,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import {
@@ -47,6 +48,8 @@ import type {
   ContactDoc,
   CaptureField,
   AgentQuestion,
+  CallResult,
+  CallResultEntry,
 } from "@/lib/firebase/types";
 import { TestAgent } from "@/app/components/TestAgent";
 
@@ -298,6 +301,7 @@ export default function ProjectDetailPage() {
           total={totalContacts}
           failedCount={contacts.filter((c) => c.status === "failed").length}
           authHeaders={authHeaders}
+          onSheetsExportSuccess={fetchProject}
         />
       )}
     </div>
@@ -660,6 +664,7 @@ function ContactsTab({
   const [manualPhone, setManualPhone] = useState("");
   const [manualName, setManualName] = useState("");
   const [addingOne, setAddingOne] = useState(false);
+  const [addOneError, setAddOneError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasMore = contacts.length < total;
 
@@ -706,9 +711,13 @@ function ContactsTab({
   };
 
   const handleAddOne = async () => {
+    setAddOneError(null);
     const digits = manualPhone.trim().replace(/\D/g, "");
-    if (digits.length < 10) return;
-    const normalized = digits.length >= 10 ? "+" + digits : digits;
+    if (digits.length < 10) {
+      setAddOneError("Enter a valid phone number (at least 10 digits).");
+      return;
+    }
+    const normalized = digits.startsWith("+") ? manualPhone.trim() : "+" + digits;
     setAddingOne(true);
     try {
       const res = await fetch(`/api/projects/${projectId}/contacts`, {
@@ -721,10 +730,15 @@ function ContactsTab({
           contacts: [{ phone: normalized, name: manualName.trim() || undefined }],
         }),
       });
-      if (!res.ok) throw new Error("Failed to add contact");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to add contact");
+      }
       setManualPhone("");
       setManualName("");
       onRefresh();
+    } catch (e) {
+      setAddOneError(e instanceof Error ? e.message : "Failed to add contact");
     } finally {
       setAddingOne(false);
     }
@@ -754,7 +768,7 @@ function ContactsTab({
               <input
                 type="text"
                 value={manualPhone}
-                onChange={(e) => setManualPhone(e.target.value)}
+                onChange={(e) => { setManualPhone(e.target.value); setAddOneError(null); }}
                 placeholder="+27123456789"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
               />
@@ -784,6 +798,11 @@ function ContactsTab({
               Add
             </button>
           </div>
+          {addOneError && (
+            <p className="mt-2 text-sm text-amber-600" role="alert">
+              {addOneError}
+            </p>
+          )}
         </div>
 
         {/* Paste or upload */}
@@ -1227,8 +1246,20 @@ function QueueTab({
     setCallError(null);
     const contactIdsToCall =
       queueIds.size > 0
-        ? Array.from(queueIds)
-        : contacts.filter((c) => c.status === "pending" || c.status === "calling").map((c) => c.id);
+        ? contacts
+            .filter(
+              (c) =>
+                queueIds.has(c.id) &&
+                (c.status === "pending" || c.status === "calling") &&
+                c.optOut !== true
+            )
+            .map((c) => c.id)
+        : contacts
+            .filter(
+              (c) =>
+                (c.status === "pending" || c.status === "calling") && c.optOut !== true
+            )
+            .map((c) => c.id);
     if (contactIdsToCall.length === 0) {
       setRunning(false);
       return;
@@ -1294,8 +1325,9 @@ function QueueTab({
       setCallingNowId(null);
     }
   };
-
-  const pendingCount = contacts.filter((c) => c.status === "pending" || c.status === "calling").length;
+  const pendingCount = contacts.filter(
+    (c) => (c.status === "pending" || c.status === "calling") && c.optOut !== true
+  ).length;
   const canRun =
     (project.status === "draft" || project.status === "paused" || project.status === "completed") &&
     (queueIds.size > 0 || pendingCount > 0);
@@ -1637,24 +1669,23 @@ const INDUSTRIES = [
   { value: "real_estate", label: "Real estate" },
   { value: "other", label: "Other" },
 ];
-
+/** Only authentic South African voices (from your ElevenLabs Voice Library). */
 const AGENT_VOICES = [
-  { value: "default", label: "Default (Rachel)" },
-  { value: "rachel", label: "Rachel - Clear & Professional" },
-  { value: "adam", label: "Adam - Professional" },
-  { value: "antoni", label: "Antoni - Warm & Friendly" },
-  { value: "sam", label: "Sam - Clear & Professional" },
-  { value: "bella", label: "Bella - Warm & Friendly" },
-  { value: "elli", label: "Elli - Young & Energetic" },
-  { value: "domi", label: "Domi - Authoritative" },
-  { value: "gigi", label: "Gigi - Calm & Soothing" },
-  { value: "grace", label: "Grace - Professional" },
-  { value: "jessi", label: "Jessi - Energetic" },
-  { value: "nicole", label: "Nicole - Conversational" },
-  { value: "sky", label: "Sky - Friendly" },
-  { value: "arnold", label: "Arnold - Authoritative" },
+  { value: "samuel_rosso", label: "Dr. Samuel Rosso – Retired Doctor" },
+  { value: "thandi", label: "Thandi – Clear and Engaging" },
+  { value: "thabiso", label: "Thabiso – Bright, Energetic" },
+  { value: "musole", label: "Musole – Smokey, Stoic" },
+  { value: "gawain", label: "The Gawain – Confident, Direct" },
+  { value: "crystal", label: "Crystal – Casual conversationalist" },
+  { value: "emma_lilliana", label: "Emma Lilliana – Soft, Warm" },
+  { value: "hannah", label: "Hannah – Formal and Professional" },
+  { value: "cheyenne", label: "Cheyenne – Calm and Professional" },
+  { value: "ryan", label: "Ryan – Serious, Round, and Clear" },
   { value: "daniel", label: "Daniel - British Accent" },
 ] as const;
+const AGENT_VOICE_VALUES = AGENT_VOICES.map((o) => o.value);
+/** Default voice when project has none or an old value (e.g. "default" → Rachel). Must be one of AGENT_VOICES. */
+const DEFAULT_AGENT_VOICE = AGENT_VOICES[0].value;
 
 function InstructionsTab({
   project,
@@ -1673,7 +1704,12 @@ function InstructionsTab({
   const [agentPhoneNumberId, setAgentPhoneNumberId] = useState(project.agentPhoneNumberId ?? "");
   const [phoneNumbers, setPhoneNumbers] = useState<{ id: string; number: string }[]>([]);
   const [phoneNumbersLoading, setPhoneNumbersLoading] = useState(true);
-  const [agentVoice, setAgentVoice] = useState(project.agentVoice ?? "default");
+  const [agentImageUrl, setAgentImageUrl] = useState(project.agentImageUrl ?? "");
+  const [agentVoice, setAgentVoice] = useState(
+    project.agentVoice && AGENT_VOICE_VALUES.includes(project.agentVoice as (typeof AGENT_VOICES)[number]["value"])
+      ? project.agentVoice
+      : DEFAULT_AGENT_VOICE
+  );
   const [goal, setGoal] = useState(project.goal ?? "");
   const [industry, setIndustry] = useState(project.industry ?? "");
   const [industryOther, setIndustryOther] = useState("");
@@ -1684,6 +1720,11 @@ function InstructionsTab({
   const [captureFields, setCaptureFields] = useState<CaptureField[]>(
     project.captureFields ?? []
   );
+  const [businessContext, setBusinessContext] = useState(
+    project.businessContext ?? ""
+  );
+  const [businessContextUrl, setBusinessContextUrl] = useState("");
+  const [businessContextGenerateError, setBusinessContextGenerateError] = useState<string | null>(null);
   const [agentInstructions, setAgentInstructions] = useState(
     project.agentInstructions ?? ""
   );
@@ -1693,6 +1734,8 @@ function InstructionsTab({
   const [saved, setSaved] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [voicePreviewLoading, setVoicePreviewLoading] = useState(false);
+  const [voicePreviewError, setVoicePreviewError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1700,7 +1743,12 @@ function InstructionsTab({
     setAgentCompany(project.agentCompany ?? "");
     setAgentNumber(project.agentNumber ?? "");
     setAgentPhoneNumberId(project.agentPhoneNumberId ?? "");
-    setAgentVoice(project.agentVoice ?? "default");
+    setAgentImageUrl(project.agentImageUrl ?? "");
+    setAgentVoice(
+      project.agentVoice && AGENT_VOICE_VALUES.includes(project.agentVoice as (typeof AGENT_VOICES)[number]["value"])
+        ? project.agentVoice
+        : DEFAULT_AGENT_VOICE
+    );
     setGoal(project.goal ?? "");
     const ind = project.industry ?? "";
     const isInList = INDUSTRIES.some((o) => o.value === ind);
@@ -1708,10 +1756,10 @@ function InstructionsTab({
     setIndustryOther(ind && !isInList ? ind : "");
     setTone(project.tone ?? "");
     setAgentQuestions(project.agentQuestions ?? []);
-    setCaptureFields(project.captureFields ?? []);
+    setBusinessContext(project.businessContext ?? "");
     setAgentInstructions(project.agentInstructions ?? "");
     setSurveyEnabled(project.surveyEnabled ?? false);
-  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.agentInstructions, project.surveyEnabled, orgName]);
+  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.agentImageUrl, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.businessContext, project.agentInstructions, project.surveyEnabled, orgName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1786,6 +1834,68 @@ function InstructionsTab({
       setGenerating(null);
     }
   };
+  const playVoicePreview = async () => {
+    setVoicePreviewError(null);
+    setVoicePreviewLoading(true);
+    try {
+      const res = await fetch(
+        `/api/voice-preview?voice=${encodeURIComponent(agentVoice)}`,
+        { headers: authHeaders }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Preview failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (err) {
+      setVoicePreviewError(err instanceof Error ? err.message : "Could not play preview");
+    } finally {
+      setVoicePreviewLoading(false);
+    }
+  };
+
+  const generateBusinessContextFromUrl = async () => {
+    const url = businessContextUrl.trim();
+    if (!url) {
+      setError("Enter a website URL first");
+      return;
+    }
+    setGenerating("businessContext");
+    setError(null);
+    setBusinessContextGenerateError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/generate-business-context`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data.error || `Failed to generate (${res.status})`;
+        setBusinessContextGenerateError(msg);
+        setError(msg);
+        return;
+      }
+      if (data.businessContext) {
+        setBusinessContext(data.businessContext);
+        setBusinessContextGenerateError(null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to generate business context";
+      setBusinessContextGenerateError(msg);
+      setError(msg);
+    } finally {
+      setGenerating(null);
+    }
+  };
+
 
   const generateMoreQuestions = async () => {
     setGenerating("questions");
@@ -1866,11 +1976,13 @@ function InstructionsTab({
           agentCompany: agentCompany.trim() || null,
           agentNumber: agentNumber.trim() || null,
           agentPhoneNumberId: agentPhoneNumberId.trim() || null,
+          agentImageUrl: agentImageUrl.trim() || null,
           agentVoice: agentVoice || null,
           industry: industry === "other" ? (industryOther || null) : (industry || null),
           tone: tone.trim() || null,
           goal: goal.trim() || null,
           agentQuestions,
+          businessContext: businessContext.trim() || null,
           captureFields,
           agentInstructions: agentInstructions.trim() || null,
           surveyEnabled,
@@ -1885,9 +1997,11 @@ function InstructionsTab({
       // Show success state briefly before scroll
       setSaved(true);
       setShowSuccess(true);
-      
-      // Wait for success animation, then scroll to top
+      // Wait for success animation, then scroll to Test Your Agent (or top)
       window.setTimeout(() => {
+        const el = document.getElementById("test-your-agent");
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        else window.scrollTo({ top: 0, behavior: "smooth" });
         window.scrollTo({ top: 0, behavior: "smooth" });
       }, 600);
       
@@ -1906,6 +2020,7 @@ function InstructionsTab({
 
   const questionCount = agentQuestions.filter((q) => q.text.trim()).length;
   const stepsRaw = [
+    { id: "businessContext", label: "Business context", hasContent: !!businessContext.trim() },
     { id: "goal", label: "Goal", hasContent: !!goal.trim() },
     { id: "industry", label: "Industry", hasContent: !!canGenerate },
     { id: "tone", label: "Tone", hasContent: !!tone.trim() },
@@ -1972,6 +2087,100 @@ function InstructionsTab({
           ))}
         </div>
       </div>
+      {/* Test Your Agent — at top so user can try after saving */}
+      {agentInstructions.trim() && (
+        <div
+          id="test-your-agent"
+          className="rounded-2xl border-2 border-teal-200 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 p-6 shadow-sm"
+        >
+          <div className="mb-4 text-center">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Test Your Agent
+            </h3>
+            <p className="text-sm text-slate-600">
+              Test your agent before calling real clients. Click below to start a test call.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              This uses the <strong>same agent</strong> as real calls: same goal, questions, business context, and script. If the call drops immediately, try allowing the microphone, using Chrome/Edge, or running a real test from Call queue to confirm the agent.
+            </p>
+          </div>
+          <TestAgent projectId={project.id} projectName={project.name} />
+        </div>
+      )}
+
+      {/* Business context — just above Goal */}
+      <div
+        className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
+          nextStep === "businessContext"
+            ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
+            : "border-slate-200 bg-white"
+        }`}
+      >
+        <label className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+          <Globe className="h-4 w-4 text-teal-600" />
+          Business context
+          {nextStep === "businessContext" && (
+            <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
+              Next step
+            </span>
+          )}
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          What the company does, location, hours, contact person and details, key services. The agent uses this to answer caller questions. Paste a website URL to generate from the site, or type it yourself.
+        </p>
+        <div className="mb-3 flex flex-wrap gap-2">
+          <input
+            type="url"
+            value={businessContextUrl}
+            onChange={(e) => {
+              setBusinessContextUrl(e.target.value);
+              setBusinessContextGenerateError(null);
+            }}
+            placeholder="https://example.com"
+            className="min-w-[200px] flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+          />
+          <button
+            type="button"
+            onClick={generateBusinessContextFromUrl}
+            disabled={!businessContextUrl.trim() || generating === "businessContext"}
+            className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+          >
+            {generating === "businessContext" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            Generate from URL
+          </button>
+        </div>
+        {businessContextGenerateError && (
+          <p className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {businessContextGenerateError}
+            {businessContextGenerateError.includes("API key") && (
+              <span className="mt-2 block">
+                Create a new key at{" "}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-medium"
+                >
+                  aistudio.google.com/apikey
+                </a>
+                {" "}and set <code className="bg-red-100 px-1 rounded">GEMINI_API_KEY</code> in your .env, then restart the app.
+              </span>
+            )}
+          </p>
+        )}
+        <textarea
+          value={businessContext}
+          onChange={(e) => setBusinessContext(e.target.value)}
+          placeholder="e.g. We are a family-owned plumbing company in Johannesburg. We offer 24/7 emergency callouts. Opening hours: Mon–Fri 8am–5pm, Sat 8am–12pm."
+          rows={6}
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-y"
+        />
+      </div>
+
 
       <p className="text-sm text-slate-600">
         Start with your goal, then set agent identity and follow the steps. Use &quot;Enhance with AI&quot; to structure and improve your goal.
@@ -2037,9 +2246,9 @@ function InstructionsTab({
         <p className="mb-4 text-xs text-slate-500">
           These are used when the agent introduces itself and in the call prompt.
         </p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Agent name</label>
+        <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 sm:items-start">
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">Agent name</label>
             <input
               type="text"
               value={agentName}
@@ -2048,8 +2257,8 @@ function InstructionsTab({
               className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Company (calling on behalf of)</label>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">Company (calling on behalf of)</label>
             <input
               type="text"
               value={agentCompany}
@@ -2058,8 +2267,8 @@ function InstructionsTab({
               className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Outbound number (agent&apos;s number)</label>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">Outbound number (agent&apos;s number)</label>
             <select
               value={agentPhoneNumberId}
               onChange={(e) => {
@@ -2081,19 +2290,38 @@ function InstructionsTab({
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">Voice</label>
-            <select
-              value={agentVoice}
-              onChange={(e) => setAgentVoice(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
-            >
-              {AGENT_VOICES.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-600">Voice</label>
+            <div className="flex gap-2">
+              <select
+                value={agentVoice}
+                onChange={(e) => { setAgentVoice(e.target.value); setVoicePreviewError(null); }}
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              >
+                {AGENT_VOICES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={playVoicePreview}
+                disabled={voicePreviewLoading}
+                className="shrink-0 flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-60"
+                title="Play a short preview of this voice"
+              >
+                {voicePreviewLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Headphones className="h-4 w-4" />
+                )}
+                Test voice
+              </button>
+            </div>
+            {voicePreviewError && (
+              <p className="text-xs text-amber-600">{voicePreviewError}</p>
+            )}
           </div>
         </div>
       </div>
@@ -2479,24 +2707,12 @@ function InstructionsTab({
           <span className="font-semibold">Save instructions</span>
         )}
       </button>
-
-      {/* Test Agent section - shown when instructions are saved */}
-      {agentInstructions.trim() && (
-        <div className="mt-8 rounded-2xl border-2 border-teal-200 bg-gradient-to-br from-teal-50/50 to-cyan-50/50 p-6 shadow-sm">
-          <div className="mb-4 text-center">
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">
-              Test Your Agent
-            </h3>
-            <p className="text-sm text-slate-600">
-              Test your agent before calling real clients. Click below to start a test call.
-            </p>
-          </div>
-          <TestAgent projectId={project.id} projectName={project.name} />
-        </div>
-      )}
     </div>
   );
 }
+
+/** One row in the Results table: a single call (contact may have multiple calls). */
+type ResultRow = { contact: ContactWithId; call: CallResultEntry };
 
 function ResultsTab({
   contacts,
@@ -2507,18 +2723,38 @@ function ResultsTab({
   project: ProjectWithId;
   onSyncCalls?: () => Promise<void>;
 }) {
-  const [transcriptIndex, setTranscriptIndex] = useState<number | null>(null);
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [syncing, setSyncing] = useState(false);
-  const selectedContact =
-    transcriptIndex !== null ? contacts[transcriptIndex] : null;
 
-  const filteredContacts = contacts.filter((c) => {
-    if (statusFilter === "success" && c.status !== "success") return false;
-    if (statusFilter === "failed" && c.status !== "failed") return false;
-    const attemptedAt = c.callResult?.attemptedAt;
+  const resultRows: ResultRow[] = useMemo(() => {
+    const rows: ResultRow[] = [];
+    for (const c of contacts) {
+      const calls =
+        c.callHistory && c.callHistory.length > 0
+          ? c.callHistory
+          : c.callResult
+            ? [{ ...c.callResult }]
+            : [];
+      for (const call of calls) {
+        rows.push({ contact: c, call });
+      }
+    }
+    rows.sort((a, b) => {
+      const ta = a.call.attemptedAt ? new Date(a.call.attemptedAt).getTime() : 0;
+      const tb = b.call.attemptedAt ? new Date(b.call.attemptedAt).getTime() : 0;
+      return tb - ta;
+    });
+    return rows;
+  }, [contacts]);
+
+  const filteredResultRows = resultRows.filter(({ call }) => {
+    const status = call.failureReason ? "failed" : "success";
+    if (statusFilter === "success" && status !== "success") return false;
+    if (statusFilter === "failed" && status !== "failed") return false;
+    const attemptedAt = call.attemptedAt;
     if (attemptedAt) {
       const d = new Date(attemptedAt).getTime();
       if (dateFrom && d < new Date(dateFrom).getTime()) return false;
@@ -2527,10 +2763,10 @@ function ResultsTab({
     return true;
   });
 
+  const selectedRow = selectedRowIndex !== null ? filteredResultRows[selectedRowIndex] ?? null : null;
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <span className="text-sm font-medium text-slate-700">Filter:</span>
+    <>
+      <div className="flex flex-wrap items-center gap-2">
         <select
           value={statusFilter}
           onChange={(e) =>
@@ -2607,118 +2843,109 @@ function ResultsTab({
             </tr>
           </thead>
           <tbody>
-            {filteredContacts.map((c, i) => (
-              <tr key={c.id} className="border-b border-slate-100">
-                <td className="px-4 py-3">
-                  <span className="font-medium text-slate-900">{c.phone}</span>
-                  {c.name && (
-                    <span className="ml-1 text-slate-500">({c.name})</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span
-                      className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs ${
-                        c.status === "success"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : c.status === "failed"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
-                      {c.status}
-                    </span>
-                    {c.status === "failed" && c.callResult?.failureReason && (
-                      <span
-                        className="max-w-[220px] text-xs text-slate-500"
-                        title={c.callResult.failureReason}
-                      >
-                        {c.callResult.failureReason}
-                      </span>
+            {filteredResultRows.map(({ contact: c, call }, i) => {
+              const status = call.failureReason ? "failed" : "success";
+              return (
+                <tr
+                  key={c.id + "-" + (call.vapiCallId ?? call.attemptedAt ?? i)}
+                  className="border-b border-slate-100"
+                >
+                  <td className="px-4 py-3">
+                    <span className="font-medium text-slate-900">{c.phone}</span>
+                    {c.name && (
+                      <span className="ml-1 text-slate-500">({c.name})</span>
                     )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {c.callResult?.durationSeconds
-                    ? `${c.callResult.durationSeconds}s`
-                    : "—"}
-                </td>
-                {project.captureFields?.map((f) => (
-                  <td key={f.key} className="px-4 py-3 text-slate-600">
-                    {c.callResult?.capturedData?.[f.key] ?? "—"}
                   </td>
-                ))}
-                <td className="px-4 py-3">
-                  {c.callResult?.transcript ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTranscriptIndex(contacts.indexOf(c))
-                      }
-                      className="flex items-center gap-1 text-teal-600 hover:text-teal-700"
-                    >
-                      <MessageSquare className="h-4 w-4" />
-                      View
-                    </button>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {c.callResult?.recordingUrl ? (
-                    <a
-                      href={c.callResult.recordingUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-teal-600 hover:text-teal-700"
-                    >
-                      <Headphones className="h-4 w-4" />
-                      Play
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-              </tr>
-            ))}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col gap-0.5">
+                      <span
+                        className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs ${
+                          status === "success"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : status === "failed"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
+                        {status}
+                      </span>
+                      {status === "failed" && call.failureReason && (
+                        <span
+                          className="max-w-[220px] text-xs text-slate-500"
+                          title={call.failureReason}
+                        >
+                          {call.failureReason}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {call.durationSeconds
+                      ? `${call.durationSeconds}s`
+                      : "—"}
+                  </td>
+                  {project.captureFields?.map((f) => (
+                    <td key={f.key} className="px-4 py-3 text-slate-600">
+                      {call.capturedData?.[f.key] ?? "—"}
+                    </td>
+                  ))}
+                  <td className="px-4 py-3">
+                    {call.transcript ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRowIndex(i)}
+                        className="flex items-center gap-1 text-teal-600 hover:text-teal-700"
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        View
+                      </button>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {call.recordingUrl ? (
+                      <a
+                        href={call.recordingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-teal-600 hover:text-teal-700"
+                      >
+                        <Headphones className="h-4 w-4" />
+                        Play
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
-
-      {selectedContact?.callResult?.transcript && (
+      {selectedRow && (
         <TranscriptModal
-          contact={selectedContact}
-          onClose={() => setTranscriptIndex(null)}
-          recordingUrl={selectedContact.callResult?.recordingUrl}
+          contact={selectedRow.contact}
+          call={selectedRow.call}
+          onClose={() => setSelectedRowIndex(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 
 function TranscriptModal({
   contact,
+  call,
   onClose,
-  recordingUrl,
 }: {
   contact: ContactWithId;
+  call: CallResult;
   onClose: () => void;
-  recordingUrl?: string;
 }) {
   const [search, setSearch] = useState("");
-  const transcript = contact.callResult?.transcript ?? "";
-  const highlighted =
-    search.trim() === ""
-      ? transcript
-      : transcript.split(new RegExp(`(${escapeRegex(search.trim())})`, "gi")).map((part, i) =>
-          part.toLowerCase() === search.trim().toLowerCase() ? (
-            <mark key={i} className="bg-amber-200">
-              {part}
-            </mark>
-          ) : (
-            part
-          )
-        );
+  const transcript = call.transcript ?? "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -2749,16 +2976,14 @@ function TranscriptModal({
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
           />
         </div>
-        {recordingUrl && (
+        {call.recordingUrl && (
           <div className="mb-4">
-            <audio controls src={recordingUrl} className="w-full">
-              <a href={recordingUrl}>Download recording</a>
+            <audio controls src={call.recordingUrl} className="w-full">
+              <a href={call.recordingUrl}>Download recording</a>
             </audio>
           </div>
         )}
-        <pre className="whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
-          {highlighted}
-        </pre>
+        <pre className="whitespace-pre-wrap text-sm text-slate-700">{transcript || "No transcript."}</pre>
       </div>
     </div>
   );
@@ -2769,10 +2994,13 @@ function escapeRegex(s: string): string {
 }
 
 function ExportTab({
+  contacts,
+  project,
   projectId,
   total,
   failedCount,
   authHeaders,
+  onSheetsExportSuccess,
 }: {
   contacts: ContactWithId[];
   project: ProjectWithId;
@@ -2780,9 +3008,37 @@ function ExportTab({
   total: number;
   failedCount: number;
   authHeaders: Record<string, string>;
+  onSheetsExportSuccess?: () => void;
 }) {
   const [exporting, setExporting] = useState(false);
   const [exportingFailed, setExportingFailed] = useState(false);
+  const [sheetsStatus, setSheetsStatus] = useState<{
+    configured: boolean;
+    serviceAccountEmail?: string;
+  } | null>(null);
+  const [sheetUrl, setSheetUrl] = useState(
+    project.googleSheetId
+      ? `https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`
+      : ""
+  );
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [exportingSheets, setExportingSheets] = useState(false);
+  const [sheetsError, setSheetsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSheetUrl(
+      project.googleSheetId
+        ? `https://docs.google.com/spreadsheets/d/${project.googleSheetId}/edit`
+        : ""
+    );
+  }, [project.googleSheetId]);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/export/google-sheets`, { headers: authHeaders })
+      .then((r) => r.json())
+      .then((data) => setSheetsStatus({ configured: data.configured, serviceAccountEmail: data.serviceAccountEmail }))
+      .catch(() => setSheetsStatus({ configured: false }));
+  }, [projectId, authHeaders]);
 
   const doExport = async (failedOnly: boolean) => {
     const res = await fetch(
@@ -2820,44 +3076,143 @@ function ExportTab({
     }
   };
 
+  const handleExportToSheets = async (failedOnly: boolean) => {
+    setSheetsError(null);
+    setExportingSheets(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export/google-sheets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          spreadsheetUrl: sheetUrl.trim() || undefined,
+          saveAsDefault,
+          failedOnly,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSheetsError(data.error ?? "Export failed");
+        return;
+      }
+      if (saveAsDefault && onSheetsExportSuccess) onSheetsExportSuccess();
+      if (data.spreadsheetUrl) window.open(data.spreadsheetUrl, "_blank");
+    } finally {
+      setExportingSheets(false);
+    }
+  };
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6">
-      <p className="mb-4 text-sm text-slate-600">
-        Export to CSV with columns: contact (phone, name), status, duration,
-        date, capture fields, transcript, recording link.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
-        >
-          {exporting ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Exporting...
-            </>
-          ) : (
-            <>Export all — {total} rows</>
-          )}
-        </button>
-        {failedCount > 0 && (
+    <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-6">
+      <div>
+        <p className="mb-4 text-sm text-slate-600">
+          Export to CSV with columns: contact (phone, name), status, duration,
+          date, capture fields, transcript, recording link.
+        </p>
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
-            onClick={handleExportFailed}
-            disabled={exportingFailed}
-            className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-70"
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
           >
-            {exportingFailed ? (
+            {exporting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Exporting...
               </>
             ) : (
-              <>Export failed only — {failedCount} rows</>
+              <>Export all — {total} rows</>
             )}
           </button>
+          {failedCount > 0 && (
+            <button
+              type="button"
+              onClick={handleExportFailed}
+              disabled={exportingFailed}
+              className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-70"
+            >
+              {exportingFailed ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>Export failed only — {failedCount} rows</>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 pt-6">
+        <h3 className="mb-2 text-sm font-semibold text-slate-900">Google Sheets</h3>
+        <p className="mb-3 text-sm text-slate-600">
+          Push the same export data to a Google Sheet. Share the sheet with the service account as Editor first.
+        </p>
+        {sheetsStatus && !sheetsStatus.configured && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Google Sheets export is not configured for this server (missing GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON).
+          </p>
+        )}
+        {sheetsStatus?.configured && (
+          <>
+            {sheetsStatus.serviceAccountEmail && (
+              <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                Share your sheet with: <strong className="font-mono">{sheetsStatus.serviceAccountEmail}</strong> (Editor)
+              </p>
+            )}
+            <div className="mb-3">
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Google Sheet URL
+              </label>
+              <input
+                type="url"
+                value={sheetUrl}
+                onChange={(e) => setSheetUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 outline-none"
+              />
+            </div>
+            <label className="mb-3 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={saveAsDefault}
+                onChange={(e) => setSaveAsDefault(e.target.checked)}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              Save as default for this project
+            </label>
+            {sheetsError && (
+              <p className="mb-2 text-sm text-red-600">{sheetsError}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleExportToSheets(false)}
+                disabled={exportingSheets || !sheetUrl.trim()}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-70"
+              >
+                {exportingSheets ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Exporting...
+                  </>
+                ) : (
+                  <>Export to Google Sheets</>
+                )}
+              </button>
+              {failedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleExportToSheets(true)}
+                  disabled={exportingSheets || !sheetUrl.trim()}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-70"
+                >
+                  Export failed only to Sheets
+                </button>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

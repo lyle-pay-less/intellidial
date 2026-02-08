@@ -6,7 +6,7 @@ import {
   incrementOrgUsage,
   createNotificationForOrg,
 } from "@/lib/data/store";
-import { mapStructuredOutputsToCapturedData } from "@/lib/vapi/client";
+import { mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
 
 /** VAPI end-of-call-report webhook body shape (subset we use). */
 type VapiEndOfCallPayload = {
@@ -22,7 +22,8 @@ type VapiEndOfCallPayload = {
     };
     artifact?: {
       transcript?: string;
-      recording?: { url?: string };
+      /** VAPI may send recording as string URL or { url } */
+      recording?: string | { url?: string };
       structuredOutputs?: Record<
         string,
         { name?: string; result?: Record<string, unknown> | null }
@@ -114,15 +115,24 @@ export async function POST(req: NextRequest) {
     const callResult = {
       durationSeconds: isFailed ? 0 : durationSeconds,
       transcript: artifact?.transcript ?? undefined,
-      recordingUrl: artifact?.recording?.url ?? undefined,
+      recordingUrl: getRecordingUrl(artifact?.recording),
       attemptedAt,
       ...(capturedData ? { capturedData } : {}),
       ...(isFailed ? { failureReason: endedReason || "Call ended" } : {}),
     };
+    const newEntry = { ...callResult, vapiCallId: call.id };
+    let callHistory = contact.callHistory ?? [];
+    if (callHistory.length === 0 && contact.callResult) {
+      callHistory = [
+        { ...contact.callResult, vapiCallId: contact.lastVapiCallId ?? undefined },
+      ];
+    }
+    callHistory = [...callHistory, newEntry];
 
     await updateContact(contact.id, {
       status: isFailed ? "failed" : "success",
       callResult,
+      callHistory,
       lastVapiCallId: call.id,
     });
 
@@ -179,7 +189,7 @@ export async function POST(req: NextRequest) {
                 missingFields,
                 capturedData,
                 transcript: artifact?.transcript,
-                recordingUrl: artifact?.recording?.url,
+                recordingUrl: getRecordingUrl(artifact?.recording),
               }
             );
           } else {
@@ -199,7 +209,7 @@ export async function POST(req: NextRequest) {
                 durationSeconds,
                 capturedData,
                 transcript: artifact?.transcript,
-                recordingUrl: artifact?.recording?.url,
+                recordingUrl: getRecordingUrl(artifact?.recording),
               }
             );
           }
