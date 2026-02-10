@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserOrganization, getInvitation } from "@/lib/data/store";
+import { getUserOrganization, getInvitation, getOrganization } from "@/lib/data/store";
+import { getFirebaseAdminAuth } from "@/lib/firebase/admin";
+import { sendInvitationEmail } from "@/lib/email/resend";
 
 export async function POST(
   request: NextRequest,
@@ -27,10 +29,32 @@ export async function POST(
     return NextResponse.json({ error: "Invitation not found or already accepted" }, { status: 404 });
   }
 
-  // TODO: Send actual email (see docs/backlog/EMAIL_SENDING.md)
+  // Generate invitation URL
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const inviteUrl = `${baseUrl}/invite/${token}`;
-  console.log(`[Resend invite] ${invitation.email} -> ${inviteUrl}`);
+
+  // Get organization name and inviter info
+  const org = await getOrganization(invitation.orgId);
+  const orgName = org?.name || "your organization";
+  
+  let inviterName = "A team member";
+  if (invitation.invitedBy) {
+    try {
+      const auth = getFirebaseAdminAuth();
+      const inviterUser = await auth.getUser(invitation.invitedBy);
+      inviterName = inviterUser.displayName || inviterUser.email || inviterName;
+    } catch (error) {
+      console.warn("[Resend] Could not get inviter info:", error);
+    }
+  }
+
+  // Send email (if SMTP is configured, otherwise log)
+  try {
+    await sendInvitationEmail(invitation.email, inviteUrl, inviterName, orgName, invitation.role);
+  } catch (error) {
+    console.error("[Resend] Email sending failed:", error);
+    console.log(`[Resend] Manual invite URL: ${inviteUrl}`);
+  }
 
   return NextResponse.json({ success: true });
 }

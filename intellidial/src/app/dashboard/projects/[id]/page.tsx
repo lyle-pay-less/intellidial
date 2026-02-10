@@ -29,6 +29,7 @@ import {
   Globe,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
+import { getHubSpotContactUrl, formatTimeAgo } from "@/lib/integrations/hubspot/utils";
 import {
   PieChart,
   Pie,
@@ -665,8 +666,185 @@ function ContactsTab({
   const [manualName, setManualName] = useState("");
   const [addingOne, setAddingOne] = useState(false);
   const [addOneError, setAddOneError] = useState<string | null>(null);
+  const [hubspotConnected, setHubspotConnected] = useState<boolean | null>(null);
+  const [hubspotSyncing, setHubspotSyncing] = useState(false);
+  const [hubspotSyncResult, setHubspotSyncResult] = useState<{ imported: number; skipped: number; filteredByStatus?: number } | null>(null);
+  const [hubspotLeadStatuses, setHubspotLeadStatuses] = useState<string[]>([]);
+  const [selectedLeadStatus, setSelectedLeadStatus] = useState<string>("all");
+  const [excludedLeadStatuses, setExcludedLeadStatuses] = useState<string[]>([]);
+  const [loadingLeadStatuses, setLoadingLeadStatuses] = useState(false);
+  const [hubspotAccountId, setHubspotAccountId] = useState<string | null>(null);
+  const [syncingContactId, setSyncingContactId] = useState<string | null>(null);
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [selectedContactsForSync, setSelectedContactsForSync] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasMore = contacts.length < total;
+
+  // Check HubSpot connection status and fetch lead statuses
+  useEffect(() => {
+    const checkHubSpot = async () => {
+      try {
+        const res = await fetch("/api/integrations/hubspot/status", {
+          headers: authHeaders,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const connected = data.connected === true;
+          setHubspotConnected(connected);
+          if (data.hubspotAccountId) {
+            setHubspotAccountId(data.hubspotAccountId);
+          }
+          
+          // Fetch lead statuses if connected
+          if (connected) {
+            setLoadingLeadStatuses(true);
+            try {
+              const statusRes = await fetch("/api/integrations/hubspot/lead-statuses", {
+                headers: authHeaders,
+              });
+              if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                setHubspotLeadStatuses(statusData.statuses || []);
+              }
+            } catch (err) {
+              console.error("Failed to fetch lead statuses:", err);
+            } finally {
+              setLoadingLeadStatuses(false);
+            }
+          }
+        } else {
+          setHubspotConnected(false);
+        }
+      } catch {
+        setHubspotConnected(false);
+      }
+    };
+    checkHubSpot();
+  }, [authHeaders]);
+
+  const handleHubSpotSync = async () => {
+    setHubspotSyncing(true);
+    setHubspotSyncResult(null);
+    try {
+      const requestBody: {
+        projectId: string;
+        limit: number;
+        leadStatuses?: string[];
+        excludeLeadStatuses?: string[];
+      } = {
+        projectId,
+        limit: 100,
+      };
+
+      // Add filters if selected
+      if (selectedLeadStatus !== "all") {
+        requestBody.leadStatuses = [selectedLeadStatus];
+      }
+      if (excludedLeadStatuses.length > 0) {
+        requestBody.excludeLeadStatuses = excludedLeadStatuses;
+      }
+
+      const res = await fetch("/api/integrations/hubspot/sync-contacts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify(requestBody),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to sync contacts");
+      }
+      const data = await res.json();
+      setHubspotSyncResult({
+        imported: data.imported || 0,
+        skipped: data.skipped || 0,
+        filteredByStatus: data.filteredByStatus || 0,
+      });
+      onRefresh();
+    } catch (e) {
+      setAddOneError(e instanceof Error ? e.message : "Failed to sync from HubSpot");
+    } finally {
+      setHubspotSyncing(false);
+    }
+  };
+
+  const toggleExcludedStatus = (status: string) => {
+    setExcludedLeadStatuses((prev) =>
+      prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status]
+    );
+  };
+
+  const handleSyncContact = async (contactId: string) => {
+    setSyncingContactId(contactId);
+    try {
+      const res = await fetch("/api/integrations/hubspot/sync-contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({ contactId, projectId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error ?? "Failed to sync contact");
+      }
+      onRefresh();
+    } catch (e) {
+      setAddOneError(e instanceof Error ? e.message : "Failed to sync contact");
+    } finally {
+      setSyncingContactId(null);
+    }
+  };
+
+  const toggleContactForSync = (contactId: string) => {
+    setSelectedContactsForSync((prev) => {
+      const next = new Set(prev);
+      if (next.has(contactId)) {
+        next.delete(contactId);
+      } else {
+        next.add(contactId);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkSync = async () => {
+    if (selectedContactsForSync.size === 0) return;
+    setBulkSyncing(true);
+    const contactIds = Array.from(selectedContactsForSync);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const contactId of contactIds) {
+      try {
+        const res = await fetch("/api/integrations/hubspot/sync-contact", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...authHeaders,
+          },
+          body: JSON.stringify({ contactId, projectId }),
+        });
+        if (res.ok) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    setSelectedContactsForSync(new Set());
+    onRefresh();
+    setBulkSyncing(false);
+    if (failCount > 0) {
+      setAddOneError(`Synced ${successCount} contact(s), ${failCount} failed`);
+    }
+  };
 
   const handleParse = () => {
     const parsed = parseAndValidatePhones(pasteText);
@@ -755,7 +933,7 @@ function ContactsTab({
 
   return (
     <div>
-      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+      <div className="mb-6 grid gap-6 lg:grid-cols-3">
         {/* Add manually - field by field */}
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h3 className="mb-2 font-medium text-slate-900">Add contact</h3>
@@ -868,15 +1046,181 @@ function ContactsTab({
             )}
           </div>
         </div>
+
+        {/* HubSpot Import */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="mb-2 font-medium text-slate-900">Import from HubSpot</h3>
+          <p className="mb-3 text-sm text-slate-500">
+            Sync contacts from your HubSpot CRM. Only contacts with phone numbers will be imported.
+          </p>
+          {hubspotConnected === null ? (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking connection...
+            </div>
+          ) : hubspotConnected ? (
+            <div>
+              {/* Lead Status Filter */}
+              <div className="mb-3">
+                <label className="mb-1 block text-xs font-medium text-slate-700">
+                  Filter by Lead Status
+                </label>
+                {loadingLeadStatuses ? (
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading statuses...
+                  </div>
+                ) : (
+                  <select
+                    value={selectedLeadStatus}
+                    onChange={(e) => setSelectedLeadStatus(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                  >
+                    <option value="all">All Lead Statuses</option>
+                    {hubspotLeadStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* Exclude Lead Statuses */}
+              {hubspotLeadStatuses.length > 0 && (
+                <div className="mb-3">
+                  <label className="mb-1 block text-xs font-medium text-slate-700">
+                    Exclude Lead Statuses (optional)
+                  </label>
+                  <div className="max-h-24 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                    {hubspotLeadStatuses.map((status) => (
+                      <label
+                        key={status}
+                        className="flex items-center gap-2 py-1 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={excludedLeadStatuses.includes(status)}
+                          onChange={() => toggleExcludedStatus(status)}
+                          className="h-3 w-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                        />
+                        <span>{status}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Filter Summary */}
+              {(selectedLeadStatus !== "all" || excludedLeadStatuses.length > 0) && (
+                <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                  {selectedLeadStatus !== "all" && (
+                    <div>Including: {selectedLeadStatus}</div>
+                  )}
+                  {excludedLeadStatuses.length > 0 && (
+                    <div>Excluding: {excludedLeadStatuses.join(", ")}</div>
+                  )}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleHubSpotSync}
+                disabled={hubspotSyncing}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {hubspotSyncing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Import contacts
+                  </>
+                )}
+              </button>
+              {hubspotSyncResult && (
+                <div className="mt-2 text-sm text-slate-600">
+                  <div>
+                    Imported {hubspotSyncResult.imported} contact{hubspotSyncResult.imported !== 1 ? "s" : ""}
+                  </div>
+                  {hubspotSyncResult.skipped > 0 && (
+                    <div>
+                      Skipped {hubspotSyncResult.skipped} duplicate{hubspotSyncResult.skipped !== 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {hubspotSyncResult.filteredByStatus && hubspotSyncResult.filteredByStatus > 0 && (
+                    <div>
+                      Filtered out {hubspotSyncResult.filteredByStatus} contact{hubspotSyncResult.filteredByStatus !== 1 ? "s" : ""} by Lead Status
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="mb-3 text-sm text-amber-600">
+                HubSpot is not connected. Connect it in Settings to import contacts.
+              </p>
+              <a
+                href="/dashboard/settings"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Go to Settings
+              </a>
+            </div>
+          )}
+        </div>
       </div>
 
-      <h3 className="mb-2 font-medium text-slate-900">
-        Contacts ({total})
-      </h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="font-medium text-slate-900">
+          Contacts ({total})
+        </h3>
+        {hubspotConnected && selectedContactsForSync.size > 0 && (
+          <button
+            type="button"
+            onClick={handleBulkSync}
+            disabled={bulkSyncing}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
+          >
+            {bulkSyncing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Syncing {selectedContactsForSync.size}...
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4" />
+                Sync {selectedContactsForSync.size} to HubSpot
+              </>
+            )}
+          </button>
+        )}
+      </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/50">
+              {hubspotConnected && (
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={contacts.length > 0 && selectedContactsForSync.size === contacts.length}
+                    onChange={() => {
+                      if (selectedContactsForSync.size === contacts.length) {
+                        setSelectedContactsForSync(new Set());
+                      } else {
+                        setSelectedContactsForSync(new Set(contacts.map((c) => c.id)));
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    title="Select all for bulk sync"
+                  />
+                </th>
+              )}
               <th className="px-4 py-3 text-left font-medium text-slate-700">
                 Phone
               </th>
@@ -886,6 +1230,16 @@ function ContactsTab({
               <th className="px-4 py-3 text-left font-medium text-slate-700">
                 Status
               </th>
+              {hubspotConnected && (
+                <th className="px-4 py-3 text-left font-medium text-slate-700">
+                  HubSpot
+                </th>
+              )}
+              {hubspotConnected && (
+                <th className="px-4 py-3 text-left font-medium text-slate-700">
+                  Actions
+                </th>
+              )}
               <th className="px-4 py-3 text-left font-medium text-slate-700">
                 Last updated
               </th>
@@ -894,6 +1248,16 @@ function ContactsTab({
           <tbody>
             {contacts.map((c) => (
               <tr key={c.id} className="border-b border-slate-100">
+                {hubspotConnected && (
+                  <td className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedContactsForSync.has(c.id)}
+                      onChange={() => toggleContactForSync(c.id)}
+                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3 text-slate-900">{c.phone}</td>
                 <td className="px-4 py-3 text-slate-600">{c.name ?? "—"}</td>
                 <td className="px-4 py-3">
@@ -909,6 +1273,65 @@ function ContactsTab({
                     {c.status}
                   </span>
                 </td>
+                {hubspotConnected && (
+                  <td className="px-4 py-3">
+                    {c.hubspotContactId ? (
+                      <div className="flex flex-col gap-1">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          <CheckCircle className="h-3 w-3" />
+                          Synced
+                        </span>
+                        {hubspotAccountId && (
+                          <a
+                            href={getHubSpotContactUrl(c.hubspotContactId, hubspotAccountId)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline"
+                            title="View in HubSpot"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            View
+                          </a>
+                        )}
+                        {c.lastSyncedToHubSpot && (
+                          <span
+                            className="text-xs text-slate-500"
+                            title={`Last synced: ${new Date(c.lastSyncedToHubSpot).toLocaleString()}`}
+                          >
+                            {formatTimeAgo(c.lastSyncedToHubSpot)}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                        Not synced
+                      </span>
+                    )}
+                  </td>
+                )}
+                {hubspotConnected && (
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleSyncContact(c.id)}
+                      disabled={syncingContactId === c.id}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      title="Sync to HubSpot"
+                    >
+                      {syncingContactId === c.id ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          Syncing...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-3 w-3" />
+                          Sync
+                        </>
+                      )}
+                    </button>
+                  </td>
+                )}
                 <td className="px-4 py-3 text-slate-500 text-xs">
                   {new Date(c.updatedAt).toLocaleDateString()}
                 </td>
@@ -3024,6 +3447,14 @@ function ExportTab({
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [exportingSheets, setExportingSheets] = useState(false);
   const [sheetsError, setSheetsError] = useState<string | null>(null);
+  const [gcpStatus, setGcpStatus] = useState<{
+    configured: boolean;
+    enabled: boolean;
+    bucketName?: string;
+  } | null>(null);
+  const [exportingGCP, setExportingGCP] = useState(false);
+  const [gcpError, setGcpError] = useState<string | null>(null);
+  const [gcpSuccess, setGcpSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     setSheetUrl(
@@ -3038,6 +3469,11 @@ function ExportTab({
       .then((r) => r.json())
       .then((data) => setSheetsStatus({ configured: data.configured, serviceAccountEmail: data.serviceAccountEmail }))
       .catch(() => setSheetsStatus({ configured: false }));
+    
+    fetch(`/api/integrations/gcp/status`, { headers: authHeaders })
+      .then((r) => r.json())
+      .then((data) => setGcpStatus({ configured: data.configured, enabled: data.enabled, bucketName: data.bucketName }))
+      .catch(() => setGcpStatus({ configured: false, enabled: false }));
   }, [projectId, authHeaders]);
 
   const doExport = async (failedOnly: boolean) => {
@@ -3098,6 +3534,28 @@ function ExportTab({
       if (data.spreadsheetUrl) window.open(data.spreadsheetUrl, "_blank");
     } finally {
       setExportingSheets(false);
+    }
+  };
+
+  const handleExportToGCP = async (failedOnly: boolean) => {
+    setGcpError(null);
+    setGcpSuccess(null);
+    setExportingGCP(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export/gcp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ failedOnly }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGcpError(data.error ?? "Export failed");
+        return;
+      }
+      setGcpSuccess(`Exported to ${data.fileName} in bucket ${gcpStatus?.bucketName}`);
+      setTimeout(() => setGcpSuccess(null), 5000);
+    } finally {
+      setExportingGCP(false);
     }
   };
 
@@ -3211,6 +3669,53 @@ function ExportTab({
                   Export failed only to Sheets
                 </button>
               )}
+            </div>
+          </>
+        )}
+
+        {/* GCP Cloud Storage Export */}
+        {gcpStatus && gcpStatus.configured && gcpStatus.enabled && (
+          <>
+            <div className="my-6 border-t border-slate-200 pt-6">
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">
+                Export to GCP Cloud Storage
+              </h3>
+              <p className="mb-3 text-sm text-slate-600">
+                Export directly to your GCP bucket: <span className="font-mono text-xs">{gcpStatus.bucketName}</span>
+              </p>
+              {gcpError && (
+                <p className="mb-2 text-sm text-red-600">{gcpError}</p>
+              )}
+              {gcpSuccess && (
+                <p className="mb-2 text-sm text-emerald-600">{gcpSuccess}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportToGCP(false)}
+                  disabled={exportingGCP}
+                  className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-70"
+                >
+                  {exportingGCP ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    <>Export to GCP Bucket</>
+                  )}
+                </button>
+                {failedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleExportToGCP(true)}
+                    disabled={exportingGCP}
+                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-70"
+                  >
+                    Export failed only to GCP
+                  </button>
+                )}
+              </div>
             </div>
           </>
         )}

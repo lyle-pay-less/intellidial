@@ -176,6 +176,16 @@ export default function LandingPage() {
               <span className="font-display text-xl font-bold text-slate-900">
                 Intelli<span className="text-teal-600">dial</span>
               </span>
+              <img
+                src="https://flagcdn.com/w40/za.png"
+                srcSet="https://flagcdn.com/w80/za.png 2x"
+                alt=""
+                width={20}
+                height={14}
+                className="shrink-0 rounded-sm border border-slate-200/80 object-cover h-[14px] w-[20px]"
+                title="South Africa"
+                aria-hidden="true"
+              />
             </a>
 
             {/* Desktop Nav */}
@@ -188,6 +198,9 @@ export default function LandingPage() {
               </a>
               <a href="#pricing" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
                 Pricing
+              </a>
+              <a href="#hubspot" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
+                HubSpot
               </a>
               <a href="#faq" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
                 FAQ
@@ -224,6 +237,9 @@ export default function LandingPage() {
             </a>
             <a href="#pricing" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
               Pricing
+            </a>
+            <a href="#hubspot" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
+              HubSpot
             </a>
             <a href="#faq" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
               FAQ
@@ -296,6 +312,32 @@ export default function LandingPage() {
                   See How It Works
                 </a>
               </div>
+              
+              {/* Integration badges — integrated below CTAs */}
+              <FadeInOnScroll delay={350}>
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <a
+                    href="#hubspot"
+                    className="inline-flex items-center gap-2.5 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 border border-slate-200/60 shadow-sm hover:shadow-md hover:border-teal-200 hover:bg-white transition-all duration-300 group"
+                  >
+                    <img src="https://cdn.simpleicons.org/hubspot/FF7A59" alt="HubSpot" className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-xs font-medium text-slate-600 group-hover:text-teal-700">
+                      Works with <span className="font-semibold">HubSpot CRM</span>
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-teal-600 group-hover:translate-x-0.5 transition-all" />
+                  </a>
+                  <a
+                    href="#export-integrations"
+                    className="inline-flex items-center gap-2.5 bg-white/80 backdrop-blur-sm rounded-full px-4 py-2 border border-slate-200/60 shadow-sm hover:shadow-md hover:border-emerald-200 hover:bg-white transition-all duration-300 group"
+                  >
+                    <img src="https://cdn.simpleicons.org/googlesheets/34A853" alt="Google Sheets" className="h-5 w-5 flex-shrink-0" />
+                    <span className="text-xs font-medium text-slate-600 group-hover:text-emerald-700">
+                      Export to <span className="font-semibold">Sheets & GCP</span>
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
+                  </a>
+                </div>
+              </FadeInOnScroll>
             </FadeInOnScroll>
           </div>
 
@@ -336,12 +378,13 @@ export default function LandingPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (demoEmail.trim()) {
-                        setDemoSubmitted(true);
-                        window.open(`mailto:hello@intellidial.co.za?subject=Book a call - ${encodeURIComponent(demoEmail)}&body=Email: ${encodeURIComponent(demoEmail)}`, "_blank");
-                      }
+                      const baseUrl = process.env.NEXT_PUBLIC_CALENDLY_URL || "https://calendly.com/growth-intellidial/30min";
+                      const url = demoEmail.trim()
+                        ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}email=${encodeURIComponent(demoEmail.trim())}`
+                        : baseUrl;
+                      setDemoSubmitted(true);
+                      window.open(url, "_blank");
                     }}
-                    disabled={!demoEmail.trim()}
                     className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 via-teal-500 to-cyan-600 text-white px-7 py-3 rounded-lg font-bold text-base hover:from-teal-500 hover:via-teal-400 hover:to-cyan-500 transition-all shadow-lg shadow-teal-500/30 hover:shadow-xl hover:shadow-teal-500/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-lg animate-glisten overflow-hidden"
                   >
                     <Calendar className="w-4 h-4 relative z-10" />
@@ -352,9 +395,9 @@ export default function LandingPage() {
             </div>
           </FadeInOnScroll>
 
-          {/* Trust indicators */}
+          {/* Trust indicators + HubSpot */}
           <FadeInOnScroll delay={400}>
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-slate-500">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm text-slate-500">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-teal-600" />
                 No setup fees
@@ -366,6 +409,14 @@ export default function LandingPage() {
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-teal-600" />
                 Cancel anytime
+              </div>
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <img src="https://cdn.simpleicons.org/hubspot/FF7A59" alt="HubSpot" className="h-5 w-5" />
+                <span className="font-medium text-slate-600">HubSpot CRM integrated</span>
+              </div>
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                <img src="https://cdn.simpleicons.org/googlesheets/34A853" alt="Google Sheets" className="h-5 w-5" />
+                <span className="font-medium text-slate-600">Google Sheets & GCP export</span>
               </div>
             </div>
           </FadeInOnScroll>
@@ -437,8 +488,8 @@ export default function LandingPage() {
           <FadeInOnScroll delay={100}>
             <div className="mb-16">
               <img 
-                src="/steps.jpeg" 
-                alt="Intellidial 3-Step Process: Upload & Import, AI-Powered Calling, Download Results" 
+                src="/3steps.jpeg" 
+                alt="Intellidial 3-Step Process: Connect CRM or Upload List, AI-Powered Calling, Automated Updates & Insights" 
                 className="w-full max-w-4xl mx-auto rounded-2xl shadow-lg"
               />
             </div>
@@ -457,10 +508,10 @@ export default function LandingPage() {
                       1
                     </div>
                   </div>
-                  <h3 className="text-xl font-bold text-slate-900 mb-3">Upload or We Generate</h3>
+                  <h3 className="text-xl font-bold text-slate-900 mb-3">Connect CRM or Upload List</h3>
                   <p className="text-slate-600">
-                    Have a list? Upload it. Or connect your CRM (HubSpot, Salesforce) to sync contacts automatically. 
-                    Don't have one? <span className="text-teal-600 font-medium">We'll build it for you</span> using Google Places API.
+                    Have a list? Upload it. Or connect your CRM (HubSpot, Salesforce, Zoho) to sync contacts automatically. 
+                    Don&apos;t have one? <span className="text-teal-600 font-medium">We&apos;ll build it for you</span> using Google Places API.
                     Just tell us what businesses to find.
                   </p>
                 </div>
@@ -503,9 +554,9 @@ export default function LandingPage() {
                     3
                   </div>
                 </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-3">Get Structured Data</h3>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">Automated Updates & Insights</h3>
                 <p className="text-slate-600">
-                  Receive extracted answers, full transcripts, and audio recordings. Export to Excel, sync to Google Sheets, 
+                  Automatic CRM updates (Lead Status, meetings) or download an organized file. Receive extracted answers, full transcripts, and audio recordings. Export to Excel, sync to Google Sheets, 
                   or drop files directly to your cloud provider (AWS S3, Azure Blob, GCP Storage).
                 </p>
               </div>
@@ -637,8 +688,166 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Coming Soon Integrations */}
-      <section className="py-16 md:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-slate-50">
+      {/* HubSpot CRM Integration — Live */}
+      <section id="hubspot" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-50 to-white">
+        <div className="max-w-6xl mx-auto">
+          <FadeInOnScroll>
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center justify-center gap-2 mb-4">
+                <img src="https://cdn.simpleicons.org/hubspot/FF7A59" alt="HubSpot" className="h-10 w-10" />
+                <span className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-semibold border border-emerald-200">
+                  <Check className="w-4 h-4" />
+                  Available now
+                </span>
+              </div>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
+                HubSpot CRM integration
+              </h2>
+              <p className="mt-4 text-xl text-slate-600 max-w-2xl mx-auto">
+                Connect your HubSpot account once. Import contacts, sync call results, and keep your CRM up to date automatically.
+              </p>
+            </div>
+          </FadeInOnScroll>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+            {[
+              { icon: Users, title: "Import contacts", desc: "Pull leads from HubSpot by Lead Status. Filter who to call and sync only the contacts you need." },
+              { icon: BarChart3, title: "Update Lead Status", desc: "Successful calls, no-answers, and meeting bookings automatically update Lead Status in HubSpot." },
+              { icon: FileText, title: "Notes & transcripts", desc: "Call transcripts and notes are created as HubSpot activities so your team has full context." },
+              { icon: FileAudio, title: "Recording links", desc: "Recording URLs are stored in HubSpot so you can listen to any call from the contact record." },
+              { icon: CalendarCheck, title: "Meetings & deals", desc: "When a meeting is booked, we create the meeting in HubSpot and optionally create a deal in your pipeline." },
+              { icon: Zap, title: "One-click connect", desc: "Secure OAuth — connect your HubSpot account in seconds. No API keys or credentials to manage." },
+            ].map((benefit, i) => (
+              <FadeInOnScroll key={i} delay={i * 80}>
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 hover:border-teal-200 hover:shadow-lg transition-all">
+                  <div className="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center mb-4">
+                    <benefit.icon className="w-6 h-6 text-teal-600" />
+                  </div>
+                  <h3 className="font-bold text-slate-900 mb-2">{benefit.title}</h3>
+                  <p className="text-slate-600 text-sm">{benefit.desc}</p>
+                </div>
+              </FadeInOnScroll>
+            ))}
+          </div>
+
+          <FadeInOnScroll delay={400}>
+            <div className="text-center mt-12">
+              <a
+                href="/login"
+                className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                Connect HubSpot in dashboard
+                <ArrowRight className="w-5 h-5" />
+              </a>
+            </div>
+          </FadeInOnScroll>
+        </div>
+      </section>
+
+      {/* Export Integrations — Google Sheets & GCP */}
+      <section id="export-integrations" className="py-20 md:py-28 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-white to-slate-50">
+        <div className="max-w-6xl mx-auto">
+          <FadeInOnScroll>
+            <div className="text-center mb-14">
+              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-semibold mb-4 border border-emerald-200">
+                <Check className="w-4 h-4" />
+                Available now
+              </div>
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-slate-900">
+                Export Integrations
+              </h2>
+              <p className="mt-4 text-xl text-slate-600 max-w-2xl mx-auto">
+                Export your call results directly to Google Sheets or GCP Cloud Storage. No manual downloads needed.
+              </p>
+            </div>
+          </FadeInOnScroll>
+
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* Google Sheets */}
+            <FadeInOnScroll delay={100}>
+              <div className="bg-white rounded-2xl p-8 border border-slate-200 hover:border-teal-200 hover:shadow-lg transition-all">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl flex items-center justify-center">
+                    <img
+                      src="https://cdn.simpleicons.org/googlesheets/34A853"
+                      alt="Google Sheets"
+                      className="h-10 w-10"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">Google Sheets</h3>
+                    <p className="text-sm text-slate-600">Automatic export to spreadsheets</p>
+                  </div>
+                </div>
+                <ul className="space-y-3 mb-6">
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <span>Export project results directly to Google Sheets</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <span>Share sheet with service account for automatic updates</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <span>Export all contacts or filter failed calls only</span>
+                  </li>
+                </ul>
+                <a
+                  href="/login"
+                  className="inline-flex items-center gap-2 text-emerald-600 hover:text-emerald-700 font-semibold text-sm"
+                >
+                  Set up in dashboard
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              </div>
+            </FadeInOnScroll>
+
+            {/* GCP Cloud Storage */}
+            <FadeInOnScroll delay={200}>
+              <div className="bg-white rounded-2xl p-8 border border-slate-200 hover:border-teal-200 hover:shadow-lg transition-all">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl flex items-center justify-center">
+                    <img
+                      src="https://cdn.simpleicons.org/googlecloud/4285F4"
+                      alt="Google Cloud Platform"
+                      className="h-10 w-10"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-900">GCP Cloud Storage</h3>
+                    <p className="text-sm text-slate-600">Direct export to your bucket</p>
+                  </div>
+                </div>
+                <ul className="space-y-3 mb-6">
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <span>Export CSV files directly to your GCP bucket</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <span>Secure service account authentication</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-slate-600">
+                    <Check className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <span>Automatic file naming with timestamps</span>
+                  </li>
+                </ul>
+                <a
+                  href="/login"
+                  className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 font-semibold text-sm"
+                >
+                  Configure in dashboard
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              </div>
+            </FadeInOnScroll>
+          </div>
+        </div>
+      </section>
+
+      {/* More integrations coming soon */}
+      <section className="py-16 md:py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-4xl mx-auto">
           <FadeInOnScroll>
             <div className="text-center mb-12">
@@ -646,99 +855,84 @@ export default function LandingPage() {
                 Coming Soon
               </div>
               <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
-                Powerful Integrations
+                More integrations
               </h2>
               <p className="text-slate-600">
-                Connect Intellidial with your favorite tools
+                Salesforce, Zoho, Azure, AWS, and more — we&apos;re adding them next
               </p>
             </div>
           </FadeInOnScroll>
 
           <div className="flex flex-wrap items-center justify-center gap-6 md:gap-8 lg:gap-10">
-            {/* Integration Component */}
             {[
-              { name: "HubSpot", logo: "https://cdn.simpleicons.org/hubspot/FF7A59", delay: 100 },
-              { 
-                name: "Salesforce", 
-                logo: "https://mitto.ch/wp-content/uploads/2024/01/salesforce@2x-8-1.png",
-                fallback: "SF",
-                delay: 200 
-              },
-              { name: "Google Sheets", logo: "https://cdn.simpleicons.org/googlesheets/34A853", delay: 300 },
-              { name: "GCP", logo: "https://www.meshcloud.io/wp-content/uploads/2022/08/googlecloud.svg", delay: 400 },
-              { name: "Azure", logo: "https://azure.microsoft.com/svghandler/azure-logo/Azure-Logo.svg", delay: 500 },
-              { name: "AWS", logo: "https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg", delay: 600 },
-              { name: "Airtable", logo: "https://cdn.simpleicons.org/airtable/18BFFF", delay: 700 },
-              { name: "Zapier", logo: "https://cdn.simpleicons.org/zapier/FF4A00", delay: 800 },
-            ].map((integration, idx) => (
+              { name: "Salesforce", logo: "https://mitto.ch/wp-content/uploads/2024/01/salesforce@2x-8-1.png", fallback: "SF", delay: 100 },
+              { name: "Zoho", logo: "https://www.zohowebstatic.com/sites/zweb/images/commonroot/zoho-logo-web.svg", delay: 150 },
+              { name: "Azure", logo: "https://azure.microsoft.com/svghandler/azure-logo/Azure-Logo.svg", delay: 200 },
+              { name: "AWS", logo: "https://upload.wikimedia.org/wikipedia/commons/9/93/Amazon_Web_Services_Logo.svg", delay: 300 },
+              { name: "Airtable", logo: "https://cdn.simpleicons.org/airtable/18BFFF", delay: 400 },
+              { name: "Zapier", logo: "https://cdn.simpleicons.org/zapier/FF4A00", delay: 500 },
+            ].map((integration) => (
               <FadeInOnScroll key={integration.name} delay={integration.delay}>
                 <div className="flex flex-col items-center group">
                   <div className="relative">
-                    <div className={`w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center ${integration.name === 'Salesforce' ? 'p-0' : 'p-3 sm:p-4'} group-hover:shadow-lg transition-shadow overflow-hidden`}>
+                    <div className={`w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center ${integration.name === "Salesforce" ? "p-0" : "p-3 sm:p-4"} group-hover:shadow-lg transition-shadow overflow-hidden`}>
                       {integration.fallback ? (
-                        // Salesforce with SVG fallback
-                        <img 
+                        <img
                           src={integration.logo}
                           alt={integration.name}
-                          className={`${integration.name === 'Salesforce' ? 'w-[180%] h-[180%] object-contain' : 'w-full h-full object-contain'}`}
+                          className={integration.name === "Salesforce" ? "w-[180%] h-[180%] object-contain" : "w-full h-full object-contain"}
                           loading="lazy"
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.style.display = "none";
                             const parent = e.currentTarget.parentElement;
-                            if (parent && !parent.querySelector('.fallback-text')) {
-                              const fallback = document.createElement('div');
-                              fallback.className = 'fallback-text text-slate-700 font-bold text-sm sm:text-lg flex items-center justify-center w-full h-full';
+                            if (parent && !parent.querySelector(".fallback-text")) {
+                              const fallback = document.createElement("div");
+                              fallback.className = "fallback-text text-slate-700 font-bold text-sm sm:text-lg flex items-center justify-center w-full h-full";
                               fallback.textContent = integration.fallback;
                               parent.appendChild(fallback);
                             }
                           }}
                         />
                       ) : (
-                        <img 
+                        <img
                           src={integration.logo}
                           alt={integration.name}
                           className="w-full h-full object-contain"
                           loading="lazy"
                           onError={(e) => {
-                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.style.display = "none";
                             const parent = e.currentTarget.parentElement;
-                            if (parent && !parent.querySelector('.fallback-text')) {
-                              const fallback = document.createElement('div');
-                              fallback.className = 'fallback-text text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center w-full h-full text-center px-1';
-                              fallback.textContent = integration.name.split(' ')[0];
+                            if (parent && !parent.querySelector(".fallback-text")) {
+                              const fallback = document.createElement("div");
+                              fallback.className = "fallback-text text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center w-full h-full text-center px-1";
+                              fallback.textContent = integration.name.split(" ")[0];
                               parent.appendChild(fallback);
                             }
                           }}
                         />
                       )}
                     </div>
-                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                      Soon
-                    </div>
+                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">Soon</div>
                   </div>
-                  <p className="mt-2 text-xs sm:text-sm text-slate-600 font-medium text-center max-w-[80px] sm:max-w-none">
-                    {integration.name}
-                  </p>
+                  <p className="mt-2 text-xs sm:text-sm text-slate-600 font-medium text-center max-w-[80px] sm:max-w-none">{integration.name}</p>
                 </div>
               </FadeInOnScroll>
             ))}
           </div>
 
-          <FadeInOnScroll delay={900}>
+          <FadeInOnScroll delay={600}>
             <div className="text-center mt-10">
               <p className="text-sm text-slate-500 mb-6">
-                Auto-sync call results directly to your CRM or spreadsheet. No manual exports needed.
+                Want early access? We&apos;ll notify you when new integrations launch.
               </p>
               <button
                 onClick={() => {
-                  window.open(`mailto:hello@intellidial.co.za?subject=Integration Waitlist - ${encodeURIComponent('I want early access to integrations')}&body=${encodeURIComponent('Hi,\n\nI\'d like to be notified when these integrations are available:\n\n- [ ] HubSpot\n- [ ] Salesforce\n- [ ] Google Sheets\n- [ ] GCP\n- [ ] Azure\n- [ ] AWS\n- [ ] Airtable\n- [ ] Zapier\n\nThanks!')}`, '_blank');
+                  window.open(`mailto:hello@intellidial.co.za?subject=Integration Waitlist&body=${encodeURIComponent("Hi,\n\nI'd like to be notified when new integrations (Salesforce, Zoho, Azure, AWS, etc.) are available.\n\nThanks!")}`, "_blank");
                 }}
                 className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Join Waitlist
+                <Mail className="w-5 h-5" />
+                Join waitlist
               </button>
             </div>
           </FadeInOnScroll>

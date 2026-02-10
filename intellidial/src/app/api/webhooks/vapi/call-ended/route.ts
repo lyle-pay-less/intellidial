@@ -7,6 +7,7 @@ import {
   createNotificationForOrg,
 } from "@/lib/data/store";
 import { mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
+import { syncCallResultToHubSpot } from "@/lib/integrations/hubspot/sync";
 
 /** VAPI end-of-call-report webhook body shape (subset we use). */
 type VapiEndOfCallPayload = {
@@ -135,6 +136,20 @@ export async function POST(req: NextRequest) {
       callHistory,
       lastVapiCallId: call.id,
     });
+
+    // Sync to HubSpot if contact is linked to HubSpot
+    if (contact.hubspotContactId && project.orgId) {
+      try {
+        await syncCallResultToHubSpot(project.orgId, contact, callResult);
+        // Update lastSyncedToHubSpot timestamp after successful sync
+        await updateContact(contact.id, {
+          lastSyncedToHubSpot: new Date().toISOString(),
+        });
+      } catch (hubspotError) {
+        // Don't fail webhook if HubSpot sync fails - log and continue
+        console.error("[Webhook] HubSpot sync failed:", hubspotError);
+      }
+    }
 
     if (project.orgId) {
       const minutesDelta = (durationSeconds || 0) / 60;

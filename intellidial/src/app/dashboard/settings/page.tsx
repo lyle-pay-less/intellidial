@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { HubSpotConnection } from "@/components/integrations/HubSpotConnection";
+import { HubSpotSettings } from "@/components/integrations/HubSpotSettings";
 
 type Plan = "starter" | "growth" | "business";
 
@@ -79,6 +81,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [hubspotConnected, setHubspotConnected] = useState<boolean>(false);
 
   useEffect(() => {
     fetchSettings();
@@ -102,6 +105,13 @@ export default function SettingsPage() {
         setSubscription(data.subscription ?? null);
         setPaymentMethod(data.paymentMethod ?? null);
         setInvoices(data.invoices ?? []);
+      }
+
+      // Check HubSpot connection status
+      const hubspotRes = await fetch("/api/integrations/hubspot/status", { headers }).catch(() => null);
+      if (hubspotRes?.ok) {
+        const hubspotData = await hubspotRes.json();
+        setHubspotConnected(hubspotData.connected === true);
       }
       
       if (statsRes?.ok) {
@@ -365,21 +375,23 @@ export default function SettingsPage() {
         <p className="mb-4 text-sm text-slate-600">
           Connect your favorite tools to automate workflows and sync data.
         </p>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-4">
+          <HubSpotConnection />
+          {hubspotConnected && <HubSpotSettings />}
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-slate-900">CRM</h3>
+              <h3 className="font-medium text-slate-900">Salesforce</h3>
               <span className="text-xs text-slate-500">Coming soon</span>
             </div>
-            <p className="text-sm text-slate-600 mb-3">Sync call results to your CRM</p>
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
-                HubSpot
-              </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
-                Salesforce
-              </span>
-            </div>
+            <p className="text-sm text-slate-600 mb-3">Sync call results to Salesforce CRM</p>
+            <button
+              disabled
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-500 cursor-not-allowed"
+            >
+              Connect Salesforce
+            </button>
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
             <div className="flex items-center justify-between mb-2">
