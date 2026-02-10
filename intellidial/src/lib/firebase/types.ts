@@ -104,6 +104,12 @@ export type ContactDoc = {
   lastVapiCallId?: string | null;
   /** VAPI call ID of current in-flight call (for polling transcript/recording). */
   vapiCallId?: string | null;
+  /** HubSpot contact ID (for HubSpot integration sync) */
+  hubspotContactId?: string | null;
+  /** HubSpot lead status (for filtering/syncing) */
+  hubspotLeadStatus?: string | null;
+  /** Last time this contact was synced to HubSpot (ISO timestamp) */
+  lastSyncedToHubSpot?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -177,6 +183,54 @@ export type NotificationDoc = {
   };
 };
 
+/** Firestore: hubspotIntegrations (collection). One per organization. */
+export type HubSpotIntegrationDoc = {
+  orgId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number; // Unix timestamp (seconds)
+  hubspotAccountId: string; // HubSpot portal ID
+  hubspotAccountName?: string; // Account name/email for display
+  connectedAt: string; // ISO
+  enabled: boolean;
+  /** Custom HubSpot app credentials (encrypted) - optional, uses shared app by default */
+  customClientId?: string; // User's own HubSpot Client ID
+  customClientSecret?: string; // Encrypted Client Secret
+  /** Sync settings */
+  settings?: {
+    autoSync?: boolean; // Auto-sync calls to HubSpot
+    callLeadStatuses?: string[]; // Which Lead Statuses to call
+    dontCallLeadStatuses?: string[]; // Which Lead Statuses to skip
+    successLeadStatus?: string; // Lead Status to set on successful call
+    failedLeadStatus?: string; // Lead Status to set on failed call
+    meetingLeadStatus?: string; // Lead Status to set on meeting booked
+    syncTranscript?: boolean; // Create Notes with transcript
+    syncRecording?: boolean; // Store recording URL in custom property
+    syncMeetings?: boolean; // Create Meetings when booked
+    syncDeals?: boolean; // Create Deals when meetings booked (default: true)
+    dealPipelineId?: string; // Default pipeline ID for deals
+    dealStageId?: string; // Default stage ID for deals (e.g., "Meeting Scheduled")
+    fieldMappings?: Record<string, string>; // Intellidial field → HubSpot property
+  };
+};
+
+/** Firestore: googleSheetsIntegrations (collection). One per organization. */
+export type GoogleSheetsIntegrationDoc = {
+  orgId: string;
+  enabled: boolean;
+  serviceAccountEmail?: string; // Service account email (for sharing instructions)
+  configuredAt?: string; // ISO timestamp
+};
+
+/** Firestore: gcpIntegrations (collection). One per organization. */
+export type GCPIntegrationDoc = {
+  orgId: string;
+  enabled: boolean;
+  bucketName?: string;
+  serviceAccountKey?: string; // Encrypted service account JSON key
+  configuredAt?: string; // ISO timestamp
+};
+
 /** Collection names */
 export const COLLECTIONS = {
   users: "users",
@@ -185,4 +239,7 @@ export const COLLECTIONS = {
   organizations: "organizations",
   invitations: "invitations",
   notifications: "notifications",
+  hubspotIntegrations: "hubspotIntegrations",
+  googleSheetsIntegrations: "googleSheetsIntegrations",
+  gcpIntegrations: "gcpIntegrations",
 } as const;

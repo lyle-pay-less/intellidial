@@ -6,7 +6,7 @@
  * Falls back to in-memory storage if Firebase is not available.
  */
 
-import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc } from "@/lib/firebase/types";
+import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc, HubSpotIntegrationDoc, GoogleSheetsIntegrationDoc, GCPIntegrationDoc } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS } from "@/lib/firebase/types";
@@ -78,6 +78,10 @@ const invitations = new Map<string, Invitation>();
 const emailToInvitationToken = new Map<string, string>();
 /** Notifications: notificationId -> NotificationDoc */
 const notifications = new Map<string, NotificationDoc & { id: string }>();
+/** HubSpot integrations: orgId -> HubSpotIntegrationDoc */
+const hubspotIntegrations = new Map<string, HubSpotIntegrationDoc>();
+const googleSheetsIntegrations = new Map<string, GoogleSheetsIntegrationDoc>();
+const gcpIntegrations = new Map<string, GCPIntegrationDoc>();
 
 let contactIdCounter = 0;
 let notificationIdCounter = 0;
@@ -934,7 +938,7 @@ export async function updateContact(
 
 export async function createContacts(
   projectId: string,
-  items: Array<{ phone: string; name?: string }>
+  items: Array<{ phone: string; name?: string; hubspotContactId?: string; hubspotLeadStatus?: string }>
 ): Promise<ContactWithId[]> {
   const ids = projectContacts.get(projectId) ?? [];
   const t = now();
@@ -957,6 +961,8 @@ export async function createContacts(
       phone,
       name: item.name ?? null,
       status: "pending",
+      hubspotContactId: item.hubspotContactId ?? null,
+      hubspotLeadStatus: item.hubspotLeadStatus ?? null,
       createdAt: t,
       updatedAt: t,
     };
@@ -2036,6 +2042,146 @@ export async function createNotificationForOrg(
   for (const member of members) {
     if (member.status === "active") {
       await createNotification(orgId, member.id, type, title, message, metadata);
+    }
+  }
+}
+
+/**
+ * Get HubSpot integration for an organization.
+ */
+export async function getHubSpotIntegration(orgId: string): Promise<HubSpotIntegrationDoc | null> {
+  // Try Firestore first if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.hubspotIntegrations).doc(orgId).get();
+      
+      if (doc.exists) {
+        const data = doc.data() as HubSpotIntegrationDoc;
+        // Update in-memory cache
+        hubspotIntegrations.set(orgId, data);
+        return data;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get HubSpot integration from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  
+  // Fallback to in-memory storage
+  return hubspotIntegrations.get(orgId) ?? null;
+}
+
+/**
+ * Save HubSpot integration for an organization.
+ */
+export async function saveHubSpotIntegration(
+  orgId: string,
+  data: HubSpotIntegrationDoc
+): Promise<void> {
+  // Update in-memory cache
+  hubspotIntegrations.set(orgId, data);
+  
+  // Persist to Firestore if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.hubspotIntegrations).doc(orgId).set(data);
+    } catch (error) {
+      console.warn("[Store] Failed to save HubSpot integration to Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+}
+
+/**
+ * Delete HubSpot integration for an organization.
+ */
+export async function deleteHubSpotIntegration(orgId: string): Promise<void> {
+  // Remove from in-memory cache
+  hubspotIntegrations.delete(orgId);
+  
+  // Delete from Firestore if configured
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.hubspotIntegrations).doc(orgId).delete();
+    } catch (error) {
+      console.warn("[Store] Failed to delete HubSpot integration from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+}
+
+/**
+ * Get Google Sheets integration for an organization.
+ */
+export async function getGoogleSheetsIntegration(orgId: string): Promise<GoogleSheetsIntegrationDoc | null> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.googleSheetsIntegrations).doc(orgId).get();
+      if (doc.exists) {
+        const data = doc.data() as GoogleSheetsIntegrationDoc;
+        googleSheetsIntegrations.set(orgId, data);
+        return data;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get Google Sheets integration from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  return googleSheetsIntegrations.get(orgId) ?? null;
+}
+
+/**
+ * Save Google Sheets integration for an organization.
+ */
+export async function saveGoogleSheetsIntegration(
+  orgId: string,
+  data: GoogleSheetsIntegrationDoc
+): Promise<void> {
+  googleSheetsIntegrations.set(orgId, data);
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.googleSheetsIntegrations).doc(orgId).set(data);
+    } catch (error) {
+      console.warn("[Store] Failed to save Google Sheets integration to Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+}
+
+/**
+ * Get GCP integration for an organization.
+ */
+export async function getGCPIntegration(orgId: string): Promise<GCPIntegrationDoc | null> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.gcpIntegrations).doc(orgId).get();
+      if (doc.exists) {
+        const data = doc.data() as GCPIntegrationDoc;
+        gcpIntegrations.set(orgId, data);
+        return data;
+      }
+    } catch (error) {
+      console.warn("[Store] Failed to get GCP integration from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+  return gcpIntegrations.get(orgId) ?? null;
+}
+
+/**
+ * Save GCP integration for an organization.
+ */
+export async function saveGCPIntegration(
+  orgId: string,
+  data: GCPIntegrationDoc
+): Promise<void> {
+  gcpIntegrations.set(orgId, data);
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.gcpIntegrations).doc(orgId).set(data);
+    } catch (error) {
+      console.warn("[Store] Failed to save GCP integration to Firestore:", error instanceof Error ? error.message : error);
     }
   }
 }
