@@ -19,14 +19,19 @@ Create these in [Secret Manager](https://console.cloud.google.com/security/secre
 | `eleven-labs-api-key` | ELEVEN_LABS_API_KEY | ElevenLabs (voice preview in app) |
 | `google-sheets-service-account-json` | GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON | Service account JSON string (Export to Sheets) |
 | `next-public-app-url` | NEXT_PUBLIC_APP_URL | App URL (e.g. `https://intellidial-xxx.run.app`) for webhooks + invite emails |
+| `hubspot-client-id` | HUBSPOT_CLIENT_ID | HubSpot OAuth app client ID |
+| `hubspot-client-secret` | HUBSPOT_CLIENT_SECRET | HubSpot OAuth app client secret |
+| `hubspot-redirect-uri` | HUBSPOT_REDIRECT_URI | HubSpot OAuth redirect URI (e.g. `https://intellidial.co.za/dashboard/integrations?hubspot_connected=true`) |
+| `integration-encryption-key` | INTEGRATION_ENCRYPTION_KEY | AES-256-GCM encryption key for encrypting user-provided credentials (64-char hex) |
 | `next-public-firebase-api-key` | NEXT_PUBLIC_FIREBASE_API_KEY | Firebase client config |
 | `next-public-firebase-auth-domain` | NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN | Firebase client config |
 | `next-public-firebase-project-id` | NEXT_PUBLIC_FIREBASE_PROJECT_ID | Firebase client config |
 | `next-public-firebase-storage-bucket` | NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET | Firebase client config |
 | `next-public-firebase-messaging-sender-id` | NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID | Firebase client config |
 | `next-public-firebase-app-id` | NEXT_PUBLIC_FIREBASE_APP_ID | Firebase client config |
+| `next-public-calendly-url` | NEXT_PUBLIC_CALENDLY_URL | Calendly booking URL for "Book Demo" button (public, embedded in client) |
 
-**Total: 15 secrets** (6 VAPI/Gemini/Google/ElevenLabs/Sheets/App URL + 6 Firebase NEXT_PUBLIC_ + 3 already existed).
+**Total: 19 secrets** (6 VAPI/Gemini/Google/ElevenLabs/Sheets/App URL + 3 HubSpot + 1 Encryption Key + 6 Firebase NEXT_PUBLIC_ + 1 Calendly + 2 already existed).
 
 ---
 
@@ -44,10 +49,15 @@ gcloud config set project intellidial-39ca7
 echo -n "YOUR_VALUE" | gcloud secrets create eleven-labs-api-key --data-file=-
 echo -n '{"type":"service_account",...}' | gcloud secrets create google-sheets-service-account-json --data-file=-
 echo -n "https://intellidial-81645167087.europe-west2.run.app" | gcloud secrets create next-public-app-url --data-file=-
+echo -n "YOUR_HUBSPOT_CLIENT_ID" | gcloud secrets create hubspot-client-id --data-file=-
+echo -n "YOUR_HUBSPOT_CLIENT_SECRET" | gcloud secrets create hubspot-client-secret --data-file=-
+echo -n "https://intellidial.co.za/dashboard/integrations?hubspot_connected=true" | gcloud secrets create hubspot-redirect-uri --data-file=-
+echo -n "YOUR_64_CHAR_HEX_ENCRYPTION_KEY" | gcloud secrets create integration-encryption-key --data-file=-
+echo -n "https://calendly.com/growth-intellidial/30min" | gcloud secrets create next-public-calendly-url --data-file=-
 
 # Grant Cloud Run service account access to the new secret(s)
 SA="cloud-run-intellidial@intellidial-39ca7.iam.gserviceaccount.com"
-for name in eleven-labs-api-key google-sheets-service-account-json next-public-app-url; do
+for name in eleven-labs-api-key google-sheets-service-account-json next-public-app-url hubspot-client-id hubspot-client-secret hubspot-redirect-uri integration-encryption-key next-public-calendly-url; do
   gcloud secrets add-iam-policy-binding $name \
     --member="serviceAccount:${SA}" \
     --role="roles/secretmanager.secretAccessor"
@@ -65,10 +75,15 @@ gcloud config set project intellidial-39ca7
 "YOUR_ELEVEN_LABS_KEY" | gcloud secrets create eleven-labs-api-key --data-file=-
 # For Google Sheets: paste the full JSON in a file, then: Get-Content path\to\key.json -Raw | gcloud secrets create google-sheets-service-account-json --data-file=-
 "https://intellidial-81645167087.europe-west2.run.app" | gcloud secrets create next-public-app-url --data-file=-
+"YOUR_HUBSPOT_CLIENT_ID" | gcloud secrets create hubspot-client-id --data-file=-
+"YOUR_HUBSPOT_CLIENT_SECRET" | gcloud secrets create hubspot-client-secret --data-file=-
+"https://intellidial.co.za/dashboard/integrations?hubspot_connected=true" | gcloud secrets create hubspot-redirect-uri --data-file=-
+"YOUR_64_CHAR_HEX_ENCRYPTION_KEY" | gcloud secrets create integration-encryption-key --data-file=-
+"https://calendly.com/growth-intellidial/30min" | gcloud secrets create next-public-calendly-url --data-file=-
 
 # Grant Cloud Run service account access (PowerShell loop)
 $SA = "cloud-run-intellidial@intellidial-39ca7.iam.gserviceaccount.com"
-@("eleven-labs-api-key", "google-sheets-service-account-json", "next-public-app-url") | ForEach-Object {
+@("eleven-labs-api-key", "google-sheets-service-account-json", "next-public-app-url", "hubspot-client-id", "hubspot-client-secret", "hubspot-redirect-uri", "integration-encryption-key", "next-public-calendly-url") | ForEach-Object {
   gcloud secrets add-iam-policy-binding $_ --member="serviceAccount:$SA" --role="roles/secretmanager.secretAccessor"
 }
 ```
