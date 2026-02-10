@@ -27,6 +27,7 @@ import {
   Target,
   MessageCircle,
   Globe,
+  ExternalLink,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import { getHubSpotContactUrl, formatTimeAgo } from "@/lib/integrations/hubspot/utils";
