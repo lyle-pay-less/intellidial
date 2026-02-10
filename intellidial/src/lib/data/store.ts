@@ -912,7 +912,7 @@ function stripUndefined<T>(obj: T): T {
 export async function updateContact(
   contactId: string,
   data: Partial<
-    Pick<ContactDoc, "status" | "callResult" | "optOut" | "lastVapiCallId" | "vapiCallId" | "callHistory">
+    Pick<ContactDoc, "status" | "callResult" | "optOut" | "lastVapiCallId" | "vapiCallId" | "callHistory" | "hubspotContactId" | "hubspotLeadStatus" | "lastSyncedToHubSpot">
   >
 ): Promise<ContactWithId | null> {
   const contact = contacts.get(contactId);
