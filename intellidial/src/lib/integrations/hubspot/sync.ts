@@ -208,8 +208,9 @@ async function createDealForMeeting(
   }
 
   // Check if meeting was booked
+  const meetingBookedValue = callResult.capturedData?.meeting_booked;
   const meetingBooked =
-    callResult.capturedData?.meeting_booked === true ||
+    (meetingBookedValue === "true" || meetingBookedValue === "yes" || meetingBookedValue === 1) ||
     callResult.capturedData?.appointment_date ||
     callResult.capturedData?.meeting_date;
 
@@ -335,8 +336,9 @@ export async function syncCallResultToHubSpot(
     }
 
     // Check if meeting was booked
+    const meetingBookedValue = callResult.capturedData?.meeting_booked;
     const meetingBooked =
-      callResult.capturedData?.meeting_booked === true ||
+      (meetingBookedValue === "true" || meetingBookedValue === "yes" || meetingBookedValue === 1) ||
       callResult.capturedData?.appointment_date ||
       callResult.capturedData?.meeting_date;
 
