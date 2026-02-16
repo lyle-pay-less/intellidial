@@ -859,9 +859,6 @@ export default function LandingPage() {
               </FadeInOnScroll>
             ))}
           </div>
-
-          <FadeInOnScroll delay={400}>
-          </FadeInOnScroll>
         </div>
       </section>
 
