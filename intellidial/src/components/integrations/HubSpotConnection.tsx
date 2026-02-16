@@ -125,7 +125,7 @@ export function HubSpotConnection() {
       </div>
       
       <p className="text-sm text-slate-600 mb-3">
-        Sync call results to HubSpot. Import contacts and update Lead Status automatically.
+        Sync call results to your HubSpot contact records — Lead Status, notes, and recording on the contact timeline.
       </p>
 
       {message && (
@@ -142,6 +142,11 @@ export function HubSpotConnection() {
 
       {status?.connected ? (
         <div className="space-y-2">
+          {status.needsRefresh && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <strong>Connection expired.</strong> Reconnect HubSpot below to continue syncing call results. Syncing is paused until you reconnect.
+            </div>
+          )}
           {status.hubspotAccountName && (
             <p className="text-sm text-slate-600">
               Connected to: <span className="font-medium">{status.hubspotAccountName}</span>
@@ -150,11 +155,6 @@ export function HubSpotConnection() {
           {status.connectedAt && (
             <p className="text-xs text-slate-500">
               Connected on {new Date(status.connectedAt).toLocaleDateString()}
-            </p>
-          )}
-          {status.needsRefresh && (
-            <p className="text-xs text-amber-600">
-              Token expired. Please reconnect.
             </p>
           )}
           <button
@@ -176,11 +176,15 @@ export function HubSpotConnection() {
           </button>
         </div>
       ) : (
-        <button
-          onClick={handleConnect}
-          disabled={connecting}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
-        >
+        <div className="space-y-2">
+          <p className="text-sm text-slate-600">
+            Connect HubSpot to sync call results (Lead Status, notes, recordings) automatically. If HubSpot is disconnected or the connection is invalid, syncing will stop until you reconnect.
+          </p>
+          <button
+            onClick={handleConnect}
+            disabled={connecting}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+          >
           {connecting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -192,7 +196,8 @@ export function HubSpotConnection() {
               Connect HubSpot
             </>
           )}
-        </button>
+          </button>
+        </div>
       )}
     </div>
   );

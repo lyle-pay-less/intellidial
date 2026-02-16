@@ -9,7 +9,7 @@
 import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc, HubSpotIntegrationDoc, GoogleSheetsIntegrationDoc, GCPIntegrationDoc } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
-import { COLLECTIONS } from "@/lib/firebase/types";
+import { COLLECTIONS, type HubSpotSyncLogDoc, type HubSpotSyncQueueDoc } from "@/lib/firebase/types";
 
 const now = () => new Date().toISOString();
 
@@ -80,6 +80,10 @@ const emailToInvitationToken = new Map<string, string>();
 const notifications = new Map<string, NotificationDoc & { id: string }>();
 /** HubSpot integrations: orgId -> HubSpotIntegrationDoc */
 const hubspotIntegrations = new Map<string, HubSpotIntegrationDoc>();
+/** HubSpot sync log: logId -> HubSpotSyncLogDoc */
+const hubspotSyncLogs = new Map<string, HubSpotSyncLogDoc & { id: string }>();
+/** HubSpot sync queue: queueId -> HubSpotSyncQueueDoc & { id: string } */
+const hubspotSyncQueue = new Map<string, HubSpotSyncQueueDoc & { id: string }>();
 const googleSheetsIntegrations = new Map<string, GoogleSheetsIntegrationDoc>();
 const gcpIntegrations = new Map<string, GCPIntegrationDoc>();
 
@@ -123,6 +127,14 @@ export function clearFirestoreCredentialFailed(): void {
 
 function nextContactId() {
   return `contact-${++contactIdCounter}`;
+}
+
+function nextSyncLogId() {
+  return `hubspot-sync-${hubspotSyncLogs.size + 1}`;
+}
+
+function nextSyncQueueId() {
+  return `hubspot-queue-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 function initStore() {
@@ -857,8 +869,12 @@ async function hydrateProjectContacts(projectId: string): Promise<void> {
         status: (d.status as ContactWithId["status"]) ?? "pending",
         optOut: (d.optOut as boolean | null) ?? null,
         callResult: d.callResult as ContactWithId["callResult"],
+        callHistory: (d.callHistory as ContactWithId["callHistory"]) ?? null,
         lastVapiCallId: (d.lastVapiCallId as string | null) ?? null,
         vapiCallId: (d.vapiCallId as string | null) ?? null,
+        hubspotContactId: (d.hubspotContactId as string | null) ?? null,
+        hubspotLeadStatus: (d.hubspotLeadStatus as string | null) ?? null,
+        lastSyncedToHubSpot: (d.lastSyncedToHubSpot as string | null) ?? null,
         createdAt: (d.createdAt as string) ?? now(),
         updatedAt: (d.updatedAt as string) ?? now(),
       };
@@ -893,6 +909,12 @@ export async function listContacts(
   const total = filtered.length;
   const pageIds = filtered.slice(offset, offset + limit);
   return { contacts: pageIds, total };
+}
+
+/** Get a single contact by project and contact id (hydrates project contacts if needed). */
+export async function getContact(projectId: string, contactId: string): Promise<ContactWithId | null> {
+  await hydrateProjectContacts(projectId);
+  return contacts.get(contactId) ?? null;
 }
 
 /** Recursively remove undefined values so Firestore accepts the document (Firestore rejects undefined). */
@@ -2106,6 +2128,132 @@ export async function deleteHubSpotIntegration(orgId: string): Promise<void> {
       await db.collection(COLLECTIONS.hubspotIntegrations).doc(orgId).delete();
     } catch (error) {
       console.warn("[Store] Failed to delete HubSpot integration from Firestore:", error instanceof Error ? error.message : error);
+    }
+  }
+}
+
+/**
+ * Log a HubSpot sync event for an organization.
+ */
+export async function logHubSpotSync(entry: HubSpotSyncLogDoc): Promise<void> {
+  const id = nextSyncLogId();
+  const logEntry: HubSpotSyncLogDoc & { id: string } = {
+    ...entry,
+    id,
+  };
+
+  hubspotSyncLogs.set(id, logEntry);
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...doc } = logEntry;
+      await db.collection(COLLECTIONS.hubspotSyncLog).doc(id).set(doc);
+    } catch (error) {
+      console.warn("[Store] Failed to write HubSpot sync log:", error instanceof Error ? error.message : error);
+    }
+  }
+}
+
+/**
+ * Get recent HubSpot sync logs for an organization.
+ */
+export async function getHubSpotSyncLogs(
+  orgId: string,
+  limit = 50
+): Promise<Array<HubSpotSyncLogDoc & { id: string }>> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const snap = await db
+        .collection(COLLECTIONS.hubspotSyncLog)
+        .where("orgId", "==", orgId)
+        .orderBy("timestamp", "desc")
+        .limit(limit)
+        .get();
+
+      const results: Array<HubSpotSyncLogDoc & { id: string }> = [];
+      snap.forEach((doc) => {
+        const data = doc.data() as HubSpotSyncLogDoc;
+        const log: HubSpotSyncLogDoc & { id: string } = {
+          id: doc.id,
+          ...data,
+        };
+        results.push(log);
+        hubspotSyncLogs.set(doc.id, log);
+      });
+      return results;
+    } catch (error) {
+      console.warn("[Store] Failed to fetch HubSpot sync logs:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  // In-memory fallback
+  return Array.from(hubspotSyncLogs.values())
+    .filter((log) => log.orgId === orgId)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
+}
+
+/**
+ * Add a failed HubSpot sync to the retry queue.
+ */
+export async function addHubSpotSyncToQueue(entry: HubSpotSyncQueueDoc): Promise<string> {
+  const id = nextSyncQueueId();
+  const doc: HubSpotSyncQueueDoc & { id: string } = { ...entry, id };
+  hubspotSyncQueue.set(id, doc);
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...data } = doc;
+      await db.collection(COLLECTIONS.hubspotSyncQueue).doc(id).set(data);
+    } catch (error) {
+      console.warn("[Store] Failed to write HubSpot sync queue:", error instanceof Error ? error.message : error);
+    }
+  }
+  return id;
+}
+
+/**
+ * Get HubSpot sync queue entries for an organization (oldest first for retry order).
+ */
+export async function getHubSpotSyncQueue(orgId: string): Promise<Array<HubSpotSyncQueueDoc & { id: string }>> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const snap = await db
+        .collection(COLLECTIONS.hubspotSyncQueue)
+        .where("orgId", "==", orgId)
+        .get();
+      const results: Array<HubSpotSyncQueueDoc & { id: string }> = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as HubSpotSyncQueueDoc;
+        const item = { id: docSnap.id, ...data };
+        results.push(item);
+        hubspotSyncQueue.set(docSnap.id, item);
+      });
+      results.sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime());
+      return results;
+    } catch (error) {
+      console.warn("[Store] Failed to fetch HubSpot sync queue:", error instanceof Error ? error.message : error);
+    }
+  }
+  return Array.from(hubspotSyncQueue.values())
+    .filter((e) => e.orgId === orgId)
+    .sort((a, b) => new Date(a.addedAt).getTime() - new Date(b.addedAt).getTime());
+}
+
+/**
+ * Remove an entry from the HubSpot sync queue (after successful retry or discard).
+ */
+export async function removeFromHubSpotSyncQueue(queueId: string): Promise<void> {
+  hubspotSyncQueue.delete(queueId);
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.hubspotSyncQueue).doc(queueId).delete();
+    } catch (error) {
+      console.warn("[Store] Failed to delete HubSpot sync queue entry:", error instanceof Error ? error.message : error);
     }
   }
 }

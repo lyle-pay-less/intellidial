@@ -13,7 +13,6 @@ import {
   TrendingUp,
   Check,
   ChevronDown,
-  MessageCircle,
   Mail,
   Zap,
   Shield,
@@ -36,6 +35,8 @@ import {
   FileAudio,
   Scale,
   FileText,
+  Car,
+  Megaphone,
 } from "lucide-react";
 
 // Animated counter hook
@@ -111,6 +112,103 @@ function FadeInOnScroll({ children, className = "", delay = 0 }: { children: Rea
   );
 }
 
+const WAITLIST_INTEGRATIONS = [
+  "Salesforce",
+  "Zoho CRM",
+  "Azure",
+  "AWS",
+  "Airtable",
+  "Zapier",
+  "Pipedrive",
+  "Monday.com",
+  "Freshsales",
+  "Other",
+];
+
+function WaitlistForm() {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [integration, setIntegration] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !integration) return;
+    setStatus("sending");
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          name: "Waitlist Signup",
+          message: `Integration waitlist request:\n\nEmail: ${email}\nIntegration: ${integration}`,
+        }),
+      });
+      if (res.ok) {
+        setStatus("sent");
+        setEmail("");
+        setIntegration("");
+        setTimeout(() => { setOpen(false); setStatus("idle"); }, 3000);
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="text-center mt-10">
+      <p className="text-sm text-slate-500 mb-6">
+        Want early access? We&apos;ll notify you when new integrations launch.
+      </p>
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-600/20 hover:shadow-xl hover:-translate-y-0.5"
+        >
+          <Mail className="w-5 h-5" />
+          Join waitlist
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit} className="max-w-sm mx-auto space-y-3">
+          <select
+            value={integration}
+            onChange={(e) => setIntegration(e.target.value)}
+            required
+            className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
+          >
+            <option value="" disabled>Which integration do you need?</option>
+            {WAITLIST_INTEGRATIONS.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+          <input
+            type="email"
+            placeholder="Your email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full px-4 py-3 rounded-xl border border-slate-300 bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
+          />
+          <button
+            type="submit"
+            disabled={status === "sending" || status === "sent"}
+            className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg shadow-teal-600/20 disabled:opacity-60"
+          >
+            <Mail className="w-5 h-5" />
+            {status === "sending" ? "Submitting..." : status === "sent" ? "You're on the list!" : status === "error" ? "Failed — try again" : "Join waitlist"}
+          </button>
+          {status === "sent" && (
+            <p className="text-teal-600 text-sm font-medium">We&apos;ll email you when it&apos;s ready!</p>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
@@ -119,6 +217,11 @@ export default function LandingPage() {
   const [demoSubmitted, setDemoSubmitted] = useState(false);
   const voiceDemoRef = useRef<VoiceDemoRef>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactMessage, setContactMessage] = useState("");
+  const [contactSubmitting, setContactSubmitting] = useState(false);
+  const [contactSuccess, setContactSuccess] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
 
   // Scroll effect for nav
   useEffect(() => {
@@ -193,7 +296,14 @@ export default function LandingPage() {
               <a href="#how-it-works" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
                 How it Works
               </a>
-              <a href="#demo" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
+              <a
+                href="#talk-to-ai"
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById("talk-to-ai")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="text-slate-600 hover:text-teal-600 transition-colors font-medium"
+              >
                 Demo
               </a>
               <a href="#pricing" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
@@ -232,7 +342,15 @@ export default function LandingPage() {
             <a href="#how-it-works" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
               How it Works
             </a>
-            <a href="#demo" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
+            <a
+              href="#talk-to-ai"
+              className="block text-slate-600 hover:text-teal-600 py-2 font-medium"
+              onClick={(e) => {
+                e.preventDefault();
+                setMobileMenuOpen(false);
+                document.getElementById("talk-to-ai")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            >
               Demo
             </a>
             <a href="#pricing" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
@@ -259,7 +377,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section — original: explains what we do; demo block in hero as main convincer */}
-      <section id="demo" className="relative pt-28 md:pt-36 pb-16 md:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+      <section id="demo" className="relative pt-28 md:pt-36 pb-16 md:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden scroll-mt-20 md:scroll-mt-24">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_100%_80%_at_50%_0%,rgba(20,184,166,0.1),transparent_50%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_80%_20%,rgba(34,211,238,0.06),transparent)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_40%_at_20%_80%,rgba(94,234,212,0.05),transparent)]" />
@@ -343,7 +461,7 @@ export default function LandingPage() {
 
           {/* Demo part — main convincer: Talk to our AI (moved into hero) */}
           <FadeInOnScroll delay={350}>
-            <div className="mt-14 md:mt-16 max-w-2xl mx-auto">
+            <div id="talk-to-ai" className="mt-14 md:mt-16 max-w-2xl mx-auto scroll-mt-24 md:scroll-mt-28">
               <div className="text-center mb-6">
                 <button
                   onClick={() => voiceDemoRef.current?.startDemo()}
@@ -620,6 +738,18 @@ export default function LandingPage() {
                 desc: "Reduce no-shows by confirming appointments, rescheduling, and capturing attendance intent across clinics, salons, and services.",
                 items: ["Appointment confirmation", "Reschedule offers", "No-show reduction"],
               },
+              {
+                icon: Car,
+                title: "Car Dealership Speed-to-Lead",
+                desc: "Instantly call back every online enquiry within 60 seconds — qualify the buyer, confirm interest, and book a test drive before your competitors even pick up the phone.",
+                items: ["60-second lead callback", "Buyer qualification", "Test drive booking"],
+              },
+              {
+                icon: Megaphone,
+                title: "Sales & Lead Follow-Up",
+                desc: "Respond to inbound leads from web forms, ads, and marketplaces in seconds. Qualify prospects, capture intent, and route warm leads to your sales team instantly.",
+                items: ["Instant lead response", "Prospect qualification", "Warm handoff to sales"],
+              },
             ].map((useCase, i) => (
               <FadeInOnScroll key={i} delay={i * 100}>
                 <div className="group bg-white rounded-2xl p-8 border border-slate-200 hover:border-teal-400/50 hover:shadow-xl hover:shadow-teal-500/20 transition-all duration-300">
@@ -704,19 +834,19 @@ export default function LandingPage() {
                 HubSpot CRM integration
               </h2>
               <p className="mt-4 text-xl text-slate-600 max-w-2xl mx-auto">
-                Connect your HubSpot account once. Import contacts, sync call results, and keep your CRM up to date automatically.
+                Connect once. Import by Lead Status or HubSpot list, sync call results to the contact record, and we respect &quot;do not call&quot; in HubSpot—one source of truth.
               </p>
             </div>
           </FadeInOnScroll>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {[
-              { icon: Users, title: "Import contacts", desc: "Pull leads from HubSpot by Lead Status. Filter who to call and sync only the contacts you need." },
-              { icon: BarChart3, title: "Update Lead Status", desc: "Successful calls, no-answers, and meeting bookings automatically update Lead Status in HubSpot." },
-              { icon: FileText, title: "Notes & transcripts", desc: "Call transcripts and notes are created as HubSpot activities so your team has full context." },
-              { icon: FileAudio, title: "Recording links", desc: "Recording URLs are stored in HubSpot so you can listen to any call from the contact record." },
-              { icon: CalendarCheck, title: "Meetings & deals", desc: "When a meeting is booked, we create the meeting in HubSpot and optionally create a deal in your pipeline." },
-              { icon: Zap, title: "One-click connect", desc: "Secure OAuth — connect your HubSpot account in seconds. No API keys or credentials to manage." },
+              { icon: Users, title: "Import contacts", desc: "Pull contacts by Lead Status or by HubSpot list—same segments you use every day. No rebuilding lists." },
+              { icon: BarChart3, title: "Update Lead Status", desc: "Success, no-answer, and meeting booked automatically update Lead Status in HubSpot (configurable in Sync Settings)." },
+              { icon: FileText, title: "Notes & transcripts", desc: "\"Intellidial Call\" notes with transcript appear on the contact timeline so your team has full context." },
+              { icon: FileAudio, title: "Recording links", desc: "Recording URL is stored on the contact so you can listen to any call from the HubSpot record." },
+              { icon: CalendarCheck, title: "Meetings & deals", desc: "When a meeting is booked on a call, we create the meeting in HubSpot and optionally create a deal in your pipeline." },
+              { icon: Zap, title: "One-click connect", desc: "Secure OAuth—connect your HubSpot account in seconds. No API keys or credentials to manage." },
             ].map((benefit, i) => (
               <FadeInOnScroll key={i} delay={i * 80}>
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 hover:border-teal-200 hover:shadow-lg transition-all">
@@ -731,15 +861,6 @@ export default function LandingPage() {
           </div>
 
           <FadeInOnScroll delay={400}>
-            <div className="text-center mt-12">
-              <a
-                href="/login"
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-600 to-cyan-600 text-white px-8 py-4 rounded-xl font-semibold hover:from-teal-700 hover:to-cyan-700 transition-all shadow-lg hover:shadow-xl"
-              >
-                Connect HubSpot in dashboard
-                <ArrowRight className="w-5 h-5" />
-              </a>
-            </div>
           </FadeInOnScroll>
         </div>
       </section>
@@ -921,20 +1042,7 @@ export default function LandingPage() {
           </div>
 
           <FadeInOnScroll delay={600}>
-            <div className="text-center mt-10">
-              <p className="text-sm text-slate-500 mb-6">
-                Want early access? We&apos;ll notify you when new integrations launch.
-              </p>
-              <button
-                onClick={() => {
-                  window.open(`mailto:hello@intellidial.co.za?subject=Integration Waitlist&body=${encodeURIComponent("Hi,\n\nI'd like to be notified when new integrations (Salesforce, Zoho, Azure, AWS, etc.) are available.\n\nThanks!")}`, "_blank");
-                }}
-                className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-              >
-                <Mail className="w-5 h-5" />
-                Join waitlist
-              </button>
-            </div>
+            <WaitlistForm />
           </FadeInOnScroll>
         </div>
       </section>
@@ -967,10 +1075,10 @@ export default function LandingPage() {
                 priceCustom: false,
                 popular: false,
                 trial: true,
-                features: ["100 calls per month", "1 project", "Excel export", "Call recordings", "Email support"],
+                features: ["50 calls per month", "1 project", "Call recordings & transcripts", "Excel export"],
                 cta: "Start free trial",
                 ctaStyle: "secondary",
-                ctaHref: "/login",
+                ctaHref: process.env.NEXT_PUBLIC_CALENDLY_URL || "https://calendly.com/growth-intellidial/30min",
               },
               {
                 name: "Growth",
@@ -978,10 +1086,10 @@ export default function LandingPage() {
                 priceCustom: false,
                 popular: true,
                 trial: true,
-                features: ["300 calls per month", "3 projects", "List generation included", "Excel export", "Call recordings", "Priority support"],
+                features: ["150 calls per month", "3 projects", "HubSpot import & sync", "Call recordings & transcripts in CRM", "Excel export"],
                 cta: "Start free trial",
                 ctaStyle: "primary",
-                ctaHref: "/login",
+                ctaHref: process.env.NEXT_PUBLIC_CALENDLY_URL || "https://calendly.com/growth-intellidial/30min",
               },
               {
                 name: "Pro",
@@ -989,10 +1097,10 @@ export default function LandingPage() {
                 priceCustom: false,
                 popular: false,
                 trial: true,
-                features: ["1,000 calls per month", "Unlimited projects", "List generation included", "Excel + API export", "Dedicated manager", "Custom AI voice"],
+                features: ["500 calls per month", "Unlimited projects", "HubSpot import, sync & two-way", "Notes, recordings & transcripts in HubSpot", "Excel + API export", "Custom AI voice"],
                 cta: "Start free trial",
                 ctaStyle: "secondary",
-                ctaHref: "/login",
+                ctaHref: process.env.NEXT_PUBLIC_CALENDLY_URL || "https://calendly.com/growth-intellidial/30min",
               },
               {
                 name: "Enterprise",
@@ -1000,10 +1108,10 @@ export default function LandingPage() {
                 priceCustom: true,
                 popular: false,
                 trial: false,
-                features: ["Custom call volume", "Unlimited projects", "Dedicated success manager", "SLA & custom integrations", "Compliance & on-premise options"],
+                features: ["Custom call volume", "Unlimited projects", "SLA & custom integrations", "White-label & compliance options"],
                 cta: "Contact us",
                 ctaStyle: "secondary",
-                ctaHref: "#contact",
+                ctaHref: process.env.NEXT_PUBLIC_CALENDLY_URL || "https://calendly.com/growth-intellidial/30min",
               },
             ].map((plan, i) => (
               <FadeInOnScroll key={i} delay={i * 100}>
@@ -1047,6 +1155,8 @@ export default function LandingPage() {
                   </ul>
                   <a
                     href={plan.ctaHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className={`block text-center px-6 py-3 rounded-xl font-semibold transition-all mt-auto ${
                       plan.ctaStyle === "primary"
                         ? "bg-gradient-to-r from-teal-600 to-teal-700 text-white hover:from-teal-700 hover:to-teal-800 shadow-lg shadow-teal-500/20"
@@ -1154,12 +1264,12 @@ export default function LandingPage() {
         <div className="max-w-4xl mx-auto">
           <FadeInOnScroll>
             <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-teal-400/25 rounded-3xl blur-3xl" />
+              <div className="absolute inset-0 bg-gradient-to-r from-teal-400/25 via-cyan-400/20 to-teal-400/25 rounded-3xl blur-3xl pointer-events-none" />
               <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-8 md:p-12 text-center overflow-hidden border border-teal-500/20 shadow-2xl shadow-teal-500/10">
-                {/* Pattern overlay */}
-                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}></div>
+                {/* Pattern overlay — pointer-events-none so the mailto link is clickable */}
+                <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}></div>
                 
-                <div className="relative">
+                <div className="relative z-10">
                   <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 text-glow">
                     Ready to Scale Your Outreach?
                   </h2>
@@ -1167,23 +1277,72 @@ export default function LandingPage() {
                     Start with a free pilot—50 calls on us. See the results before you commit.
                   </p>
 
-                  <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-                    <a
-                      href="https://wa.me/27XXXXXXXXX?text=Hi%2C%20I'm%20interested%20in%20Intellidial"
-            target="_blank"
-            rel="noopener noreferrer"
-                      className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-teal-600 hover:to-teal-700 transition-all shadow-xl hover:shadow-2xl hover:-translate-y-1"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      Chat on WhatsApp
-          </a>
-          <a
-                      href="mailto:hello@intellidial.co.za"
-                      className="inline-flex items-center justify-center gap-2 bg-white/10 backdrop-blur text-white px-8 py-4 rounded-xl font-semibold text-lg hover:bg-white/20 transition-all border border-white/20"
-                    >
-                      <Mail className="w-5 h-5" />
-                      hello@intellidial.co.za
-                    </a>
+                  <div className="max-w-md mx-auto mb-8">
+                    {contactSuccess ? (
+                      <div className="rounded-xl bg-teal-500/20 border border-teal-400/40 text-white py-4 px-6 text-center">
+                        <CheckCircle2 className="w-8 h-8 mx-auto mb-2 text-teal-300" />
+                        <p className="font-semibold">Message sent!</p>
+                        <p className="text-sm text-slate-300 mt-1">We&apos;ll get back to you at {contactEmail} within 2 hours.</p>
+                      </div>
+                    ) : (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          setContactError(null);
+                          setContactSubmitting(true);
+                          try {
+                            const res = await fetch("/api/contact", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                email: contactEmail,
+                                message: contactMessage || "I'm interested in the free pilot.",
+                              }),
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error || "Failed to send");
+                            setContactSuccess(true);
+                          } catch (err) {
+                            setContactError(err instanceof Error ? err.message : "Something went wrong.");
+                          } finally {
+                            setContactSubmitting(false);
+                          }
+                        }}
+                        className="space-y-4"
+                      >
+                        <input
+                          type="email"
+                          required
+                          placeholder="Your email"
+                          value={contactEmail}
+                          onChange={(e) => setContactEmail(e.target.value)}
+                          className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
+                          disabled={contactSubmitting}
+                        />
+                        <textarea
+                          placeholder="Your message (optional)"
+                          value={contactMessage}
+                          onChange={(e) => setContactMessage(e.target.value)}
+                          rows={2}
+                          className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent resize-none"
+                          disabled={contactSubmitting}
+                        />
+                        {contactError && (
+                          <p className="text-sm text-red-300">{contactError}</p>
+                        )}
+                        <button
+                          type="submit"
+                          disabled={contactSubmitting}
+                          className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-500 to-teal-600 text-white px-8 py-4 rounded-xl font-semibold text-lg hover:from-teal-600 hover:to-teal-700 transition-all shadow-xl hover:shadow-2xl disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                          <Mail className="w-5 h-5" />
+                          {contactSubmitting ? "Sending…" : "Send message"}
+                        </button>
+                        <p className="text-center text-sm text-slate-400">
+                          Replies from hello@intellidial.co.za
+                        </p>
+                      </form>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-400">

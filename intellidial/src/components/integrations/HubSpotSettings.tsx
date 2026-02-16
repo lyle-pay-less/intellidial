@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Loader2, Check, X, Save } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 
@@ -15,6 +16,9 @@ type HubSpotSettings = {
   meetingLeadStatus?: string;
   dealPipelineId?: string;
   dealStageId?: string;
+  callLeadStatuses?: string[]; // Which Lead Statuses to call
+  dontCallLeadStatuses?: string[]; // Which Lead Statuses to skip
+  fieldMappings?: Record<string, string>; // Intellidial field → HubSpot property
 };
 
 type HubSpotSettingsResponse = {
@@ -126,8 +130,14 @@ export function HubSpotSettings() {
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-2">
         <h3 className="font-medium text-slate-900">HubSpot Sync Settings</h3>
+        <Link
+          href="/dashboard/help/hubspot-sync"
+          className="text-xs font-medium text-teal-600 hover:text-teal-700"
+        >
+          How syncing works
+        </Link>
       </div>
 
       {message && (
@@ -279,6 +289,137 @@ export function HubSpotSettings() {
           </div>
         </div>
       )}
+
+      {/* Call Eligibility (Lead Statuses to call / skip) */}
+      {leadStatuses.length > 0 && (
+        <div className="mb-6">
+          <h4 className="mb-3 text-sm font-medium text-slate-900">Call Eligibility</h4>
+          <p className="mb-2 text-xs text-slate-500">
+            Optionally choose which HubSpot Lead Statuses Intellidial should call or skip by default.
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-700">Call these statuses</div>
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                {leadStatuses.map((status) => (
+                  <label key={status} className="flex items-center gap-2 py-1 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                      checked={settings.callLeadStatuses?.includes(status) ?? false}
+                      onChange={(e) => {
+                        const current = new Set(settings.callLeadStatuses ?? []);
+                        if (e.target.checked) {
+                          current.add(status);
+                        } else {
+                          current.delete(status);
+                        }
+                        setSettings({ ...settings, callLeadStatuses: Array.from(current) });
+                      }}
+                    />
+                    <span>{status}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1 text-xs font-medium text-slate-700">Skip these statuses</div>
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                {leadStatuses.map((status) => (
+                  <label key={status} className="flex items-center gap-2 py-1 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-3 w-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                      checked={settings.dontCallLeadStatuses?.includes(status) ?? false}
+                      onChange={(e) => {
+                        const current = new Set(settings.dontCallLeadStatuses ?? []);
+                        if (e.target.checked) {
+                          current.add(status);
+                        } else {
+                          current.delete(status);
+                        }
+                        setSettings({ ...settings, dontCallLeadStatuses: Array.from(current) });
+                      }}
+                    />
+                    <span>{status}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Field Mapping */}
+      <div className="mb-6">
+        <h4 className="mb-3 text-sm font-medium text-slate-900">Field Mapping</h4>
+        <p className="mb-2 text-xs text-slate-500">
+          Map Intellidial capture fields to HubSpot contact properties. When a call result contains a capture
+          field, its value will be written to the mapped HubSpot property.
+        </p>
+        <div className="space-y-2">
+          {Object.entries(settings.fieldMappings ?? {}).map(([fieldKey, property]) => (
+            <div key={fieldKey || Math.random()} className="grid gap-2 md:grid-cols-2">
+              <input
+                type="text"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                placeholder="Intellidial capture field (e.g. appointment_date)"
+                value={fieldKey}
+                onChange={(e) => {
+                  const newKey = e.target.value;
+                  const nextMappings: Record<string, string> = { ...(settings.fieldMappings ?? {}) };
+                  delete nextMappings[fieldKey];
+                  if (newKey) {
+                    nextMappings[newKey] = property;
+                  }
+                  setSettings({ ...settings, fieldMappings: nextMappings });
+                }}
+              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                  placeholder="HubSpot property (e.g. intellidial_interest_level)"
+                  value={property}
+                  onChange={(e) => {
+                    const nextMappings: Record<string, string> = { ...(settings.fieldMappings ?? {}) };
+                    nextMappings[fieldKey] = e.target.value;
+                    setSettings({ ...settings, fieldMappings: nextMappings });
+                  }}
+                />
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
+                  onClick={() => {
+                    const nextMappings: Record<string, string> = { ...(settings.fieldMappings ?? {}) };
+                    delete nextMappings[fieldKey];
+                    setSettings({ ...settings, fieldMappings: nextMappings });
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            onClick={() => {
+              const nextMappings: Record<string, string> = { ...(settings.fieldMappings ?? {}) };
+              let i = 1;
+              let key = `field_${i}`;
+              while (nextMappings[key]) {
+                i += 1;
+                key = `field_${i}`;
+              }
+              nextMappings[key] = "";
+              setSettings({ ...settings, fieldMappings: nextMappings });
+            }}
+          >
+            Add mapping
+          </button>
+        </div>
+      </div>
 
       {/* Deal Settings */}
       {settings.syncDeals && pipelines.length > 0 && (

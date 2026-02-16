@@ -14,6 +14,9 @@ import type {
   HubSpotDealResponse,
   HubSpotPipeline,
   HubSpotPipelinesResponse,
+  HubSpotList,
+  HubSpotListsSearchResponse,
+  HubSpotListMembershipsResponse,
 } from "./types";
 
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
@@ -266,6 +269,212 @@ export async function getContactById(
     console.error("[HubSpot] getContactById error:", error);
     return null;
   }
+}
+
+/** In-memory cache: orgs for which we've ensured intellidial_sync_status property exists (per process) */
+const syncStatusPropertyEnsured = new Set<string>();
+
+export const INTELLIDIAL_SYNC_STATUS_PROPERTY = "intellidial_sync_status";
+
+/**
+ * Ensure the contact property "intellidial_sync_status" exists in HubSpot (create if not).
+ * Cached per org per process so we don't call the API every sync.
+ */
+export async function ensureIntellidialSyncStatusProperty(orgId: string): Promise<void> {
+  if (syncStatusPropertyEnsured.has(orgId)) return;
+  const accessToken = await getAccessToken(orgId);
+  if (!accessToken) return;
+
+  try {
+    await rateLimit();
+    const getRes = await fetch(
+      `${HUBSPOT_API_BASE}/crm/v3/properties/contacts/${INTELLIDIAL_SYNC_STATUS_PROPERTY}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (getRes.ok) {
+      syncStatusPropertyEnsured.add(orgId);
+      return;
+    }
+    if (getRes.status !== 404) return;
+
+    await rateLimit();
+    const createRes = await fetch(`${HUBSPOT_API_BASE}/crm/v3/properties/contacts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        groupName: "contactinformation",
+        name: INTELLIDIAL_SYNC_STATUS_PROPERTY,
+        label: "Intellidial sync status",
+        type: "string",
+        fieldType: "text",
+      }),
+    });
+    if (createRes.ok) syncStatusPropertyEnsured.add(orgId);
+  } catch (err) {
+    console.warn("[HubSpot] ensureIntellidialSyncStatusProperty:", err);
+  }
+}
+
+const CONTACT_PROPERTIES = ["phone", "email", "firstname", "lastname", "company", "hs_lead_status"];
+const CONTACT_OBJECT_TYPE_ID = "0-1";
+
+/**
+ * Search HubSpot contact lists (segments). Returns lists of objectTypeId 0-1 (contacts).
+ */
+export async function searchContactLists(orgId: string): Promise<HubSpotList[]> {
+  const accessToken = await getAccessToken(orgId);
+  if (!accessToken) {
+    throw new Error("No valid access token");
+  }
+
+  try {
+    await rateLimit();
+    const response = await fetch(`${HUBSPOT_API_BASE}/crm/v3/lists/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        objectTypeId: CONTACT_OBJECT_TYPE_ID,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HubSpot API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as HubSpotListsSearchResponse;
+    return data.results || [];
+  } catch (error) {
+    console.error("[HubSpot] searchContactLists error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get list memberships (record IDs) for a list. Paginated via after.
+ */
+export async function getListMemberships(
+  orgId: string,
+  listId: string,
+  options?: { after?: string; limit?: number }
+): Promise<{ recordIds: string[]; after?: string }> {
+  const accessToken = await getAccessToken(orgId);
+  if (!accessToken) {
+    throw new Error("No valid access token");
+  }
+
+  const limit = options?.limit ?? 100;
+  const after = options?.after;
+  const qs = new URLSearchParams();
+  qs.set("limit", String(limit));
+  if (after) qs.set("after", after);
+
+  try {
+    await rateLimit();
+    const url = `${HUBSPOT_API_BASE}/crm/v3/lists/${listId}/memberships?${qs.toString()}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HubSpot API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as HubSpotListMembershipsResponse;
+    const results = data.results || [];
+    const recordIds = results.map((r: { recordId: string }) => r.recordId);
+    const nextAfter = data.paging?.next?.after;
+    return { recordIds, after: nextAfter };
+  } catch (error) {
+    console.error("[HubSpot] getListMemberships error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Batch read contacts by IDs (max 100 per request). Returns full contact objects.
+ */
+export async function getContactsBatch(
+  orgId: string,
+  contactIds: string[]
+): Promise<HubSpotContact[]> {
+  if (contactIds.length === 0) return [];
+  const accessToken = await getAccessToken(orgId);
+  if (!accessToken) {
+    throw new Error("No valid access token");
+  }
+
+  try {
+    await rateLimit();
+    const response = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/contacts/batch/read`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        properties: CONTACT_PROPERTIES,
+        inputs: contactIds.map((id) => ({ id })),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HubSpot API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = (await response.json()) as { results: HubSpotContact[] };
+    return data.results || [];
+  } catch (error) {
+    console.error("[HubSpot] getContactsBatch error:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get all contacts that are members of a HubSpot list (paginates memberships and batch-reads contacts).
+ */
+export async function getContactsByListId(
+  orgId: string,
+  listId: string,
+  options?: { limit?: number }
+): Promise<{ contacts: HubSpotContact[]; hasMore: boolean }> {
+  const maxContacts = options?.limit ?? 500;
+  const allRecordIds: string[] = [];
+  let after: string | undefined;
+
+  do {
+    const { recordIds, after: nextAfter } = await getListMemberships(orgId, listId, {
+      after,
+      limit: 100,
+    });
+    allRecordIds.push(...recordIds);
+    after = nextAfter;
+    if (allRecordIds.length >= maxContacts) break;
+  } while (after);
+
+  const idsToFetch = allRecordIds.slice(0, maxContacts);
+  const contacts: HubSpotContact[] = [];
+
+  for (let i = 0; i < idsToFetch.length; i += 100) {
+    const batch = idsToFetch.slice(i, i + 100);
+    const batchContacts = await getContactsBatch(orgId, batch);
+    contacts.push(...batchContacts);
+  }
+
+  return {
+    contacts,
+    hasMore: allRecordIds.length > maxContacts,
+  };
 }
 
 /**

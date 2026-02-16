@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { HubSpotConnection } from "@/components/integrations/HubSpotConnection";
 import { HubSpotSettings } from "@/components/integrations/HubSpotSettings";
+import { HubSpotSyncLog } from "@/components/integrations/HubSpotSyncLog";
 
 type Plan = "starter" | "growth" | "business";
 
@@ -377,7 +378,12 @@ export default function SettingsPage() {
         </p>
         <div className="space-y-4">
           <HubSpotConnection />
-          {hubspotConnected && <HubSpotSettings />}
+          {hubspotConnected && (
+            <>
+              <HubSpotSettings />
+              <HubSpotSyncLog />
+            </>
+          )}
         </div>
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">

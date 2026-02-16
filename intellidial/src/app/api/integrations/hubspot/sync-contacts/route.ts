@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrgFromRequest } from "@/app/api/projects/getOrgFromRequest";
 import { getProject, listContacts, createContacts } from "@/lib/data/store";
-import { getContacts } from "@/lib/integrations/hubspot/client";
+import { getContacts, getContactsByListId } from "@/lib/integrations/hubspot/client";
 import { mapHubSpotToIntellidial } from "@/lib/integrations/hubspot/map-contact";
 
 /**
  * POST /api/integrations/hubspot/sync-contacts
  * Import contacts from HubSpot into an Intellidial project.
- * Body: { projectId: string, leadStatuses?: string[], excludeLeadStatuses?: string[], limit?: number }
+ * Body: { projectId: string, listId?: string, leadStatuses?: string[], excludeLeadStatuses?: string[], limit?: number }
+ * - If listId is set: import contacts that are members of that HubSpot list.
+ * - Otherwise: import by Lead Status filter (leadStatuses / excludeLeadStatuses).
  */
 export async function POST(req: NextRequest) {
   const org = await getOrgFromRequest(req);
@@ -17,7 +19,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { projectId, leadStatus, leadStatuses, excludeLeadStatuses, limit = 100 } = body;
+    const { projectId, listId, leadStatus, leadStatuses, excludeLeadStatuses, limit = 100 } = body;
     
     // Support both old single leadStatus and new leadStatuses array for backward compatibility
     const statusesToInclude = leadStatuses || (leadStatus ? [leadStatus] : undefined);
@@ -43,21 +45,31 @@ export async function POST(req: NextRequest) {
         .filter(Boolean)
     );
 
-    // Fetch contacts from HubSpot (fetch all, then filter by Lead Status)
-    // Note: HubSpot API doesn't support filtering by multiple lead statuses in one call,
-    // so we'll fetch and filter client-side
-    const { contacts: hubspotContacts, hasMore } = await getContacts(org.orgId, {
-      limit: limit * 2, // Fetch more to account for filtering
-    });
+    // Fetch contacts: either from a HubSpot list or by Lead Status
+    let hubspotContacts: Awaited<ReturnType<typeof getContacts>>["contacts"];
+    let hasMore: boolean;
+
+    if (listId) {
+      const listResult = await getContactsByListId(org.orgId, listId, { limit });
+      hubspotContacts = listResult.contacts;
+      hasMore = listResult.hasMore;
+    } else {
+      const result = await getContacts(org.orgId, {
+        limit: limit * 2, // Fetch more to account for filtering
+      });
+      hubspotContacts = result.contacts;
+      hasMore = result.hasMore;
+    }
 
     // Map and filter contacts
-    const contactsToAdd: Array<{ 
-      phone: string; 
-      name?: string; 
-      hubspotContactId?: string; 
+    const contactsToAdd: Array<{
+      phone: string;
+      name?: string;
+      hubspotContactId?: string;
       hubspotLeadStatus?: string;
     }> = [];
-    let skipped = 0;
+    let skippedNoPhone = 0;
+    let skippedDuplicates = 0;
     let filteredByStatus = 0;
 
     for (const hubspotContact of hubspotContacts) {
@@ -82,7 +94,7 @@ export async function POST(req: NextRequest) {
 
       // Skip if no phone number
       if (!mapped.phone || !mapped.phone.trim()) {
-        skipped++;
+        skippedNoPhone++;
         continue;
       }
 
@@ -94,7 +106,7 @@ export async function POST(req: NextRequest) {
         existingPhones.has(normalizedPhone) ||
         existingHubSpotIds.has(mapped.hubspotContactId)
       ) {
-        skipped++;
+        skippedDuplicates++;
         continue;
       }
 
@@ -114,9 +126,13 @@ export async function POST(req: NextRequest) {
     // Create contacts in Intellidial project
     const created = await createContacts(projectId, contactsToAdd);
 
+    const skipped = skippedNoPhone + skippedDuplicates;
+
     return NextResponse.json({
       imported: created.length,
       skipped,
+      skippedNoPhone,
+      skippedDuplicates,
       filteredByStatus,
       total: hubspotContacts.length,
       hasMore,

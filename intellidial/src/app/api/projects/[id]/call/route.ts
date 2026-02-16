@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getProject,
   getOrganization,
+  getHubSpotIntegration,
   listContacts,
   updateContact,
 } from "@/lib/data/store";
@@ -13,6 +14,7 @@ import {
   getPhoneNumberIdForCall,
   createOutboundCall,
 } from "@/lib/vapi/client";
+import { getContactById } from "@/lib/integrations/hubspot/client";
 
 /**
  * POST /api/projects/[id]/call
@@ -93,16 +95,41 @@ export async function POST(
 
   const { contacts } = await listContacts(projectId, { limit: 5000 });
   const byId = new Map(contacts.map((c) => [c.id, c]));
-  const toCall = contactIds
+  let toCall = contactIds
     .map((cid) => byId.get(cid))
     .filter(
       (c): c is NonNullable<typeof c> =>
         c != null && c.projectId === projectId && c.optOut !== true
     );
 
+  // Two-way sync: respect HubSpot "do not call" Lead Statuses (e.g. Do not call, Not contacted)
+  const integration = await getHubSpotIntegration(org.orgId);
+  const dontCallLeadStatuses = integration?.enabled
+    ? integration.settings?.dontCallLeadStatuses
+    : undefined;
+  if (dontCallLeadStatuses && dontCallLeadStatuses.length > 0) {
+    const afterHubSpotCheck: typeof toCall = [];
+    for (const contact of toCall) {
+      if (!contact.hubspotContactId) {
+        afterHubSpotCheck.push(contact);
+        continue;
+      }
+      const hsContact = await getContactById(org.orgId, contact.hubspotContactId);
+      const leadStatus = hsContact?.properties?.hs_lead_status;
+      if (leadStatus && dontCallLeadStatuses.includes(leadStatus)) {
+        continue; // Skip: HubSpot says do not call
+      }
+      afterHubSpotCheck.push(contact);
+    }
+    toCall = afterHubSpotCheck;
+  }
+
   if (toCall.length === 0) {
     return NextResponse.json(
-      { error: "No valid contacts found for this project" },
+      {
+        error:
+          "No contacts to call. They may be opted out, or their Lead Status in HubSpot is set to do not call.",
+      },
       { status: 404 }
     );
   }

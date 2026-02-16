@@ -28,6 +28,9 @@ import {
   MessageCircle,
   Globe,
   ExternalLink,
+  HelpCircle,
+  List,
+  ChevronDown,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import { getHubSpotContactUrl, formatTimeAgo } from "@/lib/integrations/hubspot/utils";
@@ -669,11 +672,32 @@ function ContactsTab({
   const [addOneError, setAddOneError] = useState<string | null>(null);
   const [hubspotConnected, setHubspotConnected] = useState<boolean | null>(null);
   const [hubspotSyncing, setHubspotSyncing] = useState(false);
-  const [hubspotSyncResult, setHubspotSyncResult] = useState<{ imported: number; skipped: number; filteredByStatus?: number } | null>(null);
+  const [hubspotSyncResult, setHubspotSyncResult] = useState<{
+    imported: number;
+    skipped: number;
+    skippedNoPhone?: number;
+    skippedDuplicates?: number;
+    filteredByStatus?: number;
+    hasMore?: boolean;
+  } | null>(null);
   const [hubspotLeadStatuses, setHubspotLeadStatuses] = useState<string[]>([]);
   const [selectedLeadStatus, setSelectedLeadStatus] = useState<string>("all");
   const [excludedLeadStatuses, setExcludedLeadStatuses] = useState<string[]>([]);
   const [loadingLeadStatuses, setLoadingLeadStatuses] = useState(false);
+  const [hubspotImportMode, setHubspotImportMode] = useState<"leadStatus" | "list">("leadStatus");
+  const [hubspotLists, setHubspotLists] = useState<{ listId: string; name: string }[]>([]);
+  const [selectedListId, setSelectedListId] = useState<string>("");
+  const [loadingLists, setLoadingLists] = useState(false);
+  const [hubspotSyncSettings, setHubspotSyncSettings] = useState<{
+    syncTranscript?: boolean;
+    syncRecording?: boolean;
+    fieldMappings?: Record<string, string>;
+    successLeadStatus?: string;
+    failedLeadStatus?: string;
+    meetingLeadStatus?: string;
+  } | null>(null);
+  const [preFlightHubSpotOpen, setPreFlightHubSpotOpen] = useState(false);
+  const [hubspotTriggerOpen, setHubspotTriggerOpen] = useState(false);
   const [hubspotAccountId, setHubspotAccountId] = useState<string | null>(null);
   const [syncingContactId, setSyncingContactId] = useState<string | null>(null);
   const [bulkSyncing, setBulkSyncing] = useState(false);
@@ -723,6 +747,56 @@ function ContactsTab({
     checkHubSpot();
   }, [authHeaders]);
 
+  // Fetch HubSpot lists when import mode is "list" and HubSpot is connected
+  useEffect(() => {
+    if (!hubspotConnected || hubspotImportMode !== "list") return;
+    let cancelled = false;
+    setLoadingLists(true);
+    fetch("/api/integrations/hubspot/lists", { headers: authHeaders })
+      .then((res) => (res.ok ? res.json() : { lists: [] }))
+      .then((data) => {
+        if (!cancelled) setHubspotLists(data.lists || []);
+      })
+      .catch(() => {
+        if (!cancelled) setHubspotLists([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLists(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authHeaders, hubspotConnected, hubspotImportMode]);
+
+  // Fetch HubSpot sync settings for pre-flight "What we'll write to HubSpot"
+  useEffect(() => {
+    if (!hubspotConnected) {
+      setHubspotSyncSettings(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/integrations/hubspot/settings", { headers: authHeaders })
+      .then((res) => (res.ok ? res.json() : { settings: null }))
+      .then((data) => {
+        if (!cancelled && data.settings) {
+          setHubspotSyncSettings({
+            syncTranscript: data.settings.syncTranscript !== false,
+            syncRecording: data.settings.syncRecording !== false,
+            fieldMappings: data.settings.fieldMappings,
+            successLeadStatus: data.settings.successLeadStatus || "CONNECTED",
+            failedLeadStatus: data.settings.failedLeadStatus || "ATTEMPTED_TO_CONTACT",
+            meetingLeadStatus: data.settings.meetingLeadStatus || "MEETING_SCHEDULED",
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHubspotSyncSettings(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authHeaders, hubspotConnected]);
+
   const handleHubSpotSync = async () => {
     setHubspotSyncing(true);
     setHubspotSyncResult(null);
@@ -730,19 +804,23 @@ function ContactsTab({
       const requestBody: {
         projectId: string;
         limit: number;
+        listId?: string;
         leadStatuses?: string[];
         excludeLeadStatuses?: string[];
       } = {
         projectId,
-        limit: 100,
+        limit: hubspotImportMode === "list" ? 500 : 100,
       };
 
-      // Add filters if selected
-      if (selectedLeadStatus !== "all") {
-        requestBody.leadStatuses = [selectedLeadStatus];
-      }
-      if (excludedLeadStatuses.length > 0) {
-        requestBody.excludeLeadStatuses = excludedLeadStatuses;
+      if (hubspotImportMode === "list" && selectedListId) {
+        requestBody.listId = selectedListId;
+      } else {
+        if (selectedLeadStatus !== "all") {
+          requestBody.leadStatuses = [selectedLeadStatus];
+        }
+        if (excludedLeadStatuses.length > 0) {
+          requestBody.excludeLeadStatuses = excludedLeadStatuses;
+        }
       }
 
       const res = await fetch("/api/integrations/hubspot/sync-contacts", {
@@ -761,7 +839,10 @@ function ContactsTab({
       setHubspotSyncResult({
         imported: data.imported || 0,
         skipped: data.skipped || 0,
+        skippedNoPhone: data.skippedNoPhone ?? 0,
+        skippedDuplicates: data.skippedDuplicates ?? data.skipped ?? 0,
         filteredByStatus: data.filteredByStatus || 0,
+        hasMore: data.hasMore === true,
       });
       onRefresh();
     } catch (e) {
@@ -1052,8 +1133,65 @@ function ContactsTab({
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <h3 className="mb-2 font-medium text-slate-900">Import from HubSpot</h3>
           <p className="mb-3 text-sm text-slate-500">
-            Sync contacts from your HubSpot CRM. Only contacts with phone numbers will be imported.
+            Add contacts from your HubSpot CRM to this project. Only contacts with phone numbers are
+            imported. Call results sync back to each contact&apos;s record in HubSpot.
           </p>
+          {hubspotConnected && (
+            <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setPreFlightHubSpotOpen((o) => !o)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100/80"
+              >
+                <span>What we&apos;ll write to HubSpot</span>
+                <ChevronDown
+                  className={`h-4 w-4 text-slate-500 transition-transform ${preFlightHubSpotOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {preFlightHubSpotOpen && (
+                <div className="border-t border-slate-200 px-3 py-2 text-sm text-slate-600">
+                  {hubspotSyncSettings === null ? (
+                    <div className="flex items-center gap-2 text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading sync settings…
+                    </div>
+                  ) : (
+                    <>
+                  <p className="mb-2 font-medium text-slate-700">
+                    When a call completes, we update this contact in HubSpot with:
+                  </p>
+                  <ul className="list-inside list-disc space-y-1">
+                    <li>
+                      <strong>Lead Status</strong> — success: {hubspotSyncSettings.successLeadStatus ?? "CONNECTED"}, failed: {hubspotSyncSettings.failedLeadStatus ?? "ATTEMPTED_TO_CONTACT"}, meeting booked: {hubspotSyncSettings.meetingLeadStatus ?? "MEETING_SCHEDULED"}
+                    </li>
+                    {hubspotSyncSettings.syncTranscript !== false && (
+                      <li>
+                        <strong>Note</strong> — &quot;Intellidial Call&quot; note with transcript on the contact timeline
+                      </li>
+                    )}
+                    {hubspotSyncSettings.syncRecording !== false && (
+                      <li>
+                        <strong>Recording URL</strong> — link to the call recording (and in the note)
+                      </li>
+                    )}
+                    <li>
+                      Call activity — last call date, duration, call count
+                    </li>
+                    {hubspotSyncSettings.fieldMappings && Object.keys(hubspotSyncSettings.fieldMappings).length > 0 && (
+                      <li>
+                        <strong>Custom properties</strong> — {Object.entries(hubspotSyncSettings.fieldMappings).map(([k, v]) => `${k} → ${v}`).join("; ")}
+                      </li>
+                    )}
+                  </ul>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Configure in Settings → Integrations → HubSpot Sync Settings.
+                  </p>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {hubspotConnected === null ? (
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1061,73 +1199,152 @@ function ContactsTab({
             </div>
           ) : hubspotConnected ? (
             <div>
-              {/* Lead Status Filter */}
+              {/* Import by: Lead Status or HubSpot list */}
               <div className="mb-3">
-                <label className="mb-1 block text-xs font-medium text-slate-700">
-                  Filter by Lead Status
-                </label>
-                {loadingLeadStatuses ? (
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading statuses...
-                  </div>
-                ) : (
-                  <select
-                    value={selectedLeadStatus}
-                    onChange={(e) => setSelectedLeadStatus(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  Who to import
+                  <span
+                    className="text-slate-400"
+                    title="Choose by Lead Status (filter) or by a HubSpot list — same segments you use in HubSpot."
                   >
-                    <option value="all">All Lead Statuses</option>
-                    {hubspotLeadStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                    <HelpCircle className="h-3.5 w-3.5" />
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHubspotImportMode("leadStatus")}
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${
+                      hubspotImportMode === "leadStatus"
+                        ? "border-teal-500 bg-teal-50 text-teal-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Target className="h-4 w-4" />
+                    Lead Status
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHubspotImportMode("list")}
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${
+                      hubspotImportMode === "list"
+                        ? "border-teal-500 bg-teal-50 text-teal-800"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <List className="h-4 w-4" />
+                    HubSpot list
+                  </button>
+                </div>
               </div>
 
-              {/* Exclude Lead Statuses */}
-              {hubspotLeadStatuses.length > 0 && (
+              {hubspotImportMode === "list" ? (
                 <div className="mb-3">
                   <label className="mb-1 block text-xs font-medium text-slate-700">
-                    Exclude Lead Statuses (optional)
+                    Choose a HubSpot list
                   </label>
-                  <div className="max-h-24 overflow-y-auto rounded-lg border border-slate-200 p-2">
-                    {hubspotLeadStatuses.map((status) => (
-                      <label
-                        key={status}
-                        className="flex items-center gap-2 py-1 text-sm text-slate-700"
+                  {loadingLists ? (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading lists...
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedListId}
+                      onChange={(e) => setSelectedListId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                    >
+                      <option value="">Select a list…</option>
+                      {hubspotLists.map((list) => (
+                        <option key={list.listId} value={list.listId}>
+                          {list.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {hubspotLists.length === 0 && !loadingLists && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      No contact lists in HubSpot, or create one in HubSpot first.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Lead Status Filter */}
+                  <div className="mb-3">
+                    <label className="mb-1 block text-xs font-medium text-slate-700">
+                      Filter by Lead Status
+                    </label>
+                    {loadingLeadStatuses ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Loading statuses...
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedLeadStatus}
+                        onChange={(e) => setSelectedLeadStatus(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
                       >
-                        <input
-                          type="checkbox"
-                          checked={excludedLeadStatuses.includes(status)}
-                          onChange={() => toggleExcludedStatus(status)}
-                          className="h-3 w-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                        />
-                        <span>{status}</span>
-                      </label>
-                    ))}
+                        <option value="all">All Lead Statuses</option>
+                        {hubspotLeadStatuses.map((status) => (
+                          <option key={status} value={status}>
+                            {status}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
-                </div>
+
+                  {/* Exclude Lead Statuses */}
+                  {hubspotLeadStatuses.length > 0 && (
+                    <div className="mb-3">
+                      <label className="mb-1 block text-xs font-medium text-slate-700">
+                        Exclude Lead Statuses (optional)
+                      </label>
+                      <div className="max-h-24 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                        {hubspotLeadStatuses.map((status) => (
+                          <label
+                            key={status}
+                            className="flex items-center gap-2 py-1 text-sm text-slate-700"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={excludedLeadStatuses.includes(status)}
+                              onChange={() => toggleExcludedStatus(status)}
+                              className="h-3 w-3 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                            />
+                            <span>{status}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Filter Summary */}
+                  {(selectedLeadStatus !== "all" || excludedLeadStatuses.length > 0) && (
+                    <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
+                      {selectedLeadStatus !== "all" && (
+                        <div>Including: {selectedLeadStatus}</div>
+                      )}
+                      {excludedLeadStatuses.length > 0 && (
+                        <div>Excluding: {excludedLeadStatuses.join(", ")}</div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
 
-              {/* Filter Summary */}
-              {(selectedLeadStatus !== "all" || excludedLeadStatuses.length > 0) && (
-                <div className="mb-3 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">
-                  {selectedLeadStatus !== "all" && (
-                    <div>Including: {selectedLeadStatus}</div>
-                  )}
-                  {excludedLeadStatuses.length > 0 && (
-                    <div>Excluding: {excludedLeadStatuses.join(", ")}</div>
-                  )}
-                </div>
-              )}
-
+              <p className="mb-2 text-xs text-slate-500">
+                Up to 500 contacts per run. For larger lists, run Import again to get the next batch.
+              </p>
               <button
                 type="button"
                 onClick={handleHubSpotSync}
-                disabled={hubspotSyncing}
+                disabled={
+                  hubspotSyncing ||
+                  (hubspotImportMode === "list" && !selectedListId)
+                }
                 className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {hubspotSyncing ? (
@@ -1145,16 +1362,74 @@ function ContactsTab({
               {hubspotSyncResult && (
                 <div className="mt-2 text-sm text-slate-600">
                   <div>
-                    Imported {hubspotSyncResult.imported} contact{hubspotSyncResult.imported !== 1 ? "s" : ""}
+                    Imported {hubspotSyncResult.imported} contact
+                    {hubspotSyncResult.imported !== 1 ? "s" : ""}
                   </div>
-                  {hubspotSyncResult.skipped > 0 && (
-                    <div>
-                      Skipped {hubspotSyncResult.skipped} duplicate{hubspotSyncResult.skipped !== 1 ? "s" : ""}
+                  {hubspotSyncResult.hasMore && (
+                    <div className="mt-1 font-medium text-teal-700">
+                      There are more contacts in this list. Run Import again to continue.
                     </div>
                   )}
-                  {hubspotSyncResult.filteredByStatus && hubspotSyncResult.filteredByStatus > 0 && (
+                  {(hubspotSyncResult.skippedDuplicates ?? 0) > 0 && (
                     <div>
-                      Filtered out {hubspotSyncResult.filteredByStatus} contact{hubspotSyncResult.filteredByStatus !== 1 ? "s" : ""} by Lead Status
+                      Skipped {hubspotSyncResult.skippedDuplicates} duplicate
+                      {hubspotSyncResult.skippedDuplicates !== 1 ? "s" : ""}
+                    </div>
+                  )}
+                  {(hubspotSyncResult.skippedNoPhone ?? 0) > 0 && (
+                    <div>
+                      Skipped {hubspotSyncResult.skippedNoPhone} contact
+                      {hubspotSyncResult.skippedNoPhone !== 1 ? "s" : ""} without
+                      {" "}phone number
+                    </div>
+                  )}
+                  {hubspotSyncResult.filteredByStatus &&
+                    hubspotSyncResult.filteredByStatus > 0 && (
+                      <div>
+                        Filtered out {hubspotSyncResult.filteredByStatus} contact
+                        {hubspotSyncResult.filteredByStatus !== 1 ? "s" : ""} by
+                        {" "}Lead Status
+                      </div>
+                    )}
+                </div>
+              )}
+              {/* Trigger from HubSpot: webhook URL for workflows */}
+              {hubspotConnected && (
+                <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/50">
+                  <button
+                    type="button"
+                    onClick={() => setHubspotTriggerOpen((o) => !o)}
+                    className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100/80"
+                  >
+                    <span>Trigger from HubSpot (workflow → add to queue)</span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-500 transition-transform ${hubspotTriggerOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {hubspotTriggerOpen && (
+                    <div className="border-t border-slate-200 px-3 py-2 text-sm text-slate-600">
+                      <p className="mb-2">
+                        In a HubSpot workflow, add a &quot;Send webhook&quot; action to add contacts to this project&apos;s call queue when they enter a list or Lead Status changes.
+                      </p>
+                      <p className="mb-1 text-xs font-medium text-slate-500">Webhook URL</p>
+                      <code className="block break-all rounded bg-slate-100 px-2 py-1 text-xs">
+                        {typeof window !== "undefined" ? `${window.location.origin}/api/integrations/hubspot/webhook` : "/api/integrations/hubspot/webhook"}
+                      </code>
+                      <p className="mt-2 text-xs font-medium text-slate-500">JSON body (POST)</p>
+                      <pre className="mt-1 overflow-x-auto rounded bg-slate-100 p-2 text-xs">
+                        {JSON.stringify(
+                          {
+                            projectId,
+                            hubspotContactId: "{{ contact.id }}",
+                            secret: "<optional: set HUBSPOT_WEBHOOK_SECRET in env>",
+                          },
+                          null,
+                          2
+                        )}
+                      </pre>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Use <code className="rounded bg-slate-100 px-1">{"{{ contact.id }}"}</code> in HubSpot for the contact ID. If HUBSPOT_WEBHOOK_SECRET is set, include it as <code className="rounded bg-slate-100 px-1">secret</code> or header <code className="rounded bg-slate-100 px-1">X-Intellidial-Webhook-Secret</code>.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1284,20 +1559,30 @@ function ContactsTab({
                         </span>
                         {hubspotAccountId && (
                           <a
-                            href={getHubSpotContactUrl(c.hubspotContactId, hubspotAccountId)}
+                            href={getHubSpotContactUrl(
+                              c.hubspotContactId,
+                              hubspotAccountId,
+                            )}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline"
-                            title="View in HubSpot"
+                            title="Open this contact's record in HubSpot"
                           >
                             <ExternalLink className="h-3 w-3" />
                             View
                           </a>
                         )}
+                        {c.hubspotLeadStatus && (
+                          <span className="text-xs text-slate-500">
+                            Lead status: {c.hubspotLeadStatus}
+                          </span>
+                        )}
                         {c.lastSyncedToHubSpot && (
                           <span
                             className="text-xs text-slate-500"
-                            title={`Last synced: ${new Date(c.lastSyncedToHubSpot).toLocaleString()}`}
+                            title={`Last synced to HubSpot: ${new Date(
+                              c.lastSyncedToHubSpot,
+                            ).toLocaleString()}. Results appear on the contact's timeline.`}
                           >
                             {formatTimeAgo(c.lastSyncedToHubSpot)}
                           </span>
@@ -1317,7 +1602,7 @@ function ContactsTab({
                       onClick={() => handleSyncContact(c.id)}
                       disabled={syncingContactId === c.id}
                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      title="Sync to HubSpot"
+                      title="Sync call results to this contact's record in HubSpot (Lead Status, notes, recording)"
                     >
                       {syncingContactId === c.id ? (
                         <>

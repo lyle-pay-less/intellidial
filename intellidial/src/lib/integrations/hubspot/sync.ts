@@ -3,12 +3,15 @@
  * Updates lead status, creates notes, updates custom properties
  */
 
-import { getHubSpotIntegration } from "@/lib/data/store";
+import { getHubSpotIntegration, logHubSpotSync, addHubSpotSyncToQueue } from "@/lib/data/store";
 import {
   getAccessToken,
   refreshAccessToken,
   createDeal,
   associateDealWithContact,
+  getContactById,
+  ensureIntellidialSyncStatusProperty,
+  INTELLIDIAL_SYNC_STATUS_PROPERTY,
 } from "./client";
 import type { HubSpotDealProperties } from "./types";
 import type { ContactDoc } from "@/lib/firebase/types";
@@ -323,6 +326,8 @@ export async function syncCallResultToHubSpot(
   const isFailed = !!callResult.failureReason;
 
   try {
+    await ensureIntellidialSyncStatusProperty(orgId);
+
     // Update Lead Status based on call outcome (use settings or defaults)
     const leadStatusUpdates: Record<string, string> = {};
     const successStatus = integration.settings?.successLeadStatus || "CONNECTED";
@@ -353,6 +358,7 @@ export async function syncCallResultToHubSpot(
     // Update custom properties (respect sync settings)
     const customProperties: Record<string, string | number | null> = {
       ...leadStatusUpdates,
+      [INTELLIDIAL_SYNC_STATUS_PROPERTY]: "success",
     };
 
     if (syncRecording && callResult.recordingUrl) {
@@ -367,8 +373,38 @@ export async function syncCallResultToHubSpot(
       customProperties.intellidial_last_call_date = callResult.attemptedAt;
     }
 
-    // Increment call count (we'll need to fetch current value first, or use a separate endpoint)
-    // For now, we'll just set the last call date and let HubSpot handle counting if needed
+    // Map capturedData fields to HubSpot properties using fieldMappings
+    const fieldMappings = integration.settings?.fieldMappings;
+    if (callResult.capturedData && fieldMappings) {
+      for (const [captureKey, hubspotProperty] of Object.entries(fieldMappings)) {
+        if (!captureKey || !hubspotProperty) continue;
+        const value = (callResult.capturedData as Record<string, unknown>)[captureKey];
+        if (value === undefined || value === null || value === "") continue;
+        if (typeof value === "string" || typeof value === "number") {
+          customProperties[hubspotProperty] = value as string | number;
+        } else {
+          // Fallback: store non-primitive values as JSON string
+          customProperties[hubspotProperty] = JSON.stringify(value);
+        }
+      }
+    }
+
+    // Increment call count (best-effort: read current value and increment)
+    try {
+      const hubspotContact = await getContactById(orgId, contactId);
+      const currentCountRaw =
+        (hubspotContact as any)?.properties?.intellidial_call_count;
+      const currentCount = currentCountRaw
+        ? Number.parseInt(String(currentCountRaw), 10)
+        : 0;
+      const nextCount = Number.isFinite(currentCount) ? currentCount + 1 : 1;
+      customProperties.intellidial_call_count = nextCount;
+    } catch (countError) {
+      console.warn(
+        "[HubSpot] Failed to increment intellidial_call_count:",
+        countError,
+      );
+    }
 
     // Update contact properties
     if (Object.keys(customProperties).length > 0) {
@@ -376,8 +412,10 @@ export async function syncCallResultToHubSpot(
     }
 
     // Create Note with transcript (if transcript exists and syncTranscript enabled)
+    // First line is shown in HubSpot timeline — keep it clearly "Intellidial Call" so users recognize it at a glance
     if (syncTranscript && callResult.transcript) {
-      const noteBody = `Intellidial Call Transcript:\n\n${callResult.transcript}\n\nDuration: ${callResult.durationSeconds || 0} seconds\nStatus: ${isSuccess ? "Success" : "Failed"}${
+      const statusLabel = isSuccess ? "Success" : "Failed";
+      const noteBody = `Intellidial Call – ${statusLabel}\n\nTranscript:\n\n${callResult.transcript}\n\nDuration: ${callResult.durationSeconds || 0} seconds${
         callResult.failureReason ? `\nReason: ${callResult.failureReason}` : ""
       }${syncRecording && callResult.recordingUrl ? `\nRecording: ${callResult.recordingUrl}` : ""}`;
 
@@ -402,13 +440,59 @@ export async function syncCallResultToHubSpot(
       await createDealForMeeting(orgId, contact, callResult);
     }
 
+    // Log successful sync
+    await logHubSpotSync({
+      orgId,
+      contactId: contact.id,
+      hubspotContactId: contactId,
+      timestamp: new Date().toISOString(),
+      status: "success",
+      action: meetingBooked ? "Updated contact, created meeting/deal" : "Updated contact properties",
+    });
+
     // Update lastSyncedToHubSpot timestamp on contact
     // Note: This is done in the webhook handler after sync completes
     // We'll update it there to avoid circular dependencies
 
     console.log(`[HubSpot] Successfully synced call result for contact ${contactId}`);
   } catch (error) {
-    // Don't throw - we don't want to fail the webhook if HubSpot sync fails
+    // Log failed sync but don't throw - we don't want to fail the webhook if HubSpot sync fails
+    const errMsg = error instanceof Error ? error.message : String(error);
     console.error("[HubSpot] Sync call result error:", error);
+    try {
+      await logHubSpotSync({
+        orgId,
+        contactId: contact.id,
+        hubspotContactId: contact.hubspotContactId || "",
+        timestamp: new Date().toISOString(),
+        status: "failed",
+        action: "Sync call result",
+        error: errMsg,
+      });
+    } catch (logError) {
+      console.warn("[HubSpot] Failed to log sync error:", logError);
+    }
+    try {
+      const projectId = (contact as { projectId?: string }).projectId;
+      if (projectId) {
+        await addHubSpotSyncToQueue({
+          orgId,
+          projectId,
+          contactId: contact.id,
+          addedAt: new Date().toISOString(),
+          lastError: errMsg,
+          retryCount: 0,
+        });
+      }
+    } catch (queueError) {
+      console.warn("[HubSpot] Failed to add to sync queue:", queueError);
+    }
+    try {
+      await updateContactProperties(accessToken, contactId, {
+        [INTELLIDIAL_SYNC_STATUS_PROPERTY]: "failed",
+      });
+    } catch (statusError) {
+      console.warn("[HubSpot] Failed to set sync status to failed on contact:", statusError);
+    }
   }
 }

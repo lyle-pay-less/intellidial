@@ -231,6 +231,27 @@ export type GCPIntegrationDoc = {
   configuredAt?: string; // ISO timestamp
 };
 
+/** Firestore: hubspotSyncLog (collection). Many per organization. */
+export type HubSpotSyncLogDoc = {
+  orgId: string;
+  contactId: string;
+  hubspotContactId: string;
+  timestamp: string; // ISO timestamp
+  status: "success" | "failed";
+  action: string; // "Updated Lead Status", "Created Note", etc.
+  error?: string;
+};
+
+/** Firestore: hubspotSyncQueue (collection). Failed syncs to retry. */
+export type HubSpotSyncQueueDoc = {
+  orgId: string;
+  projectId: string;
+  contactId: string;
+  addedAt: string; // ISO timestamp
+  lastError: string;
+  retryCount: number;
+};
+
 /** Collection names */
 export const COLLECTIONS = {
   users: "users",
@@ -242,4 +263,6 @@ export const COLLECTIONS = {
   hubspotIntegrations: "hubspotIntegrations",
   googleSheetsIntegrations: "googleSheetsIntegrations",
   gcpIntegrations: "gcpIntegrations",
+  hubspotSyncLog: "hubspotSyncLog",
+  hubspotSyncQueue: "hubspotSyncQueue",
 } as const;

@@ -5,6 +5,7 @@ import { Plug, Loader2, Check, X, ExternalLink } from "lucide-react";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { HubSpotConnection } from "@/components/integrations/HubSpotConnection";
 import { HubSpotSettings } from "@/components/integrations/HubSpotSettings";
+import { HubSpotSyncLog } from "@/components/integrations/HubSpotSyncLog";
 import { GoogleSheetsConnection } from "@/components/integrations/GoogleSheetsConnection";
 import { GCPConnection } from "@/components/integrations/GCPConnection";
 import Link from "next/link";
@@ -107,6 +108,13 @@ export default function IntegrationsPage() {
               <p className="text-sm text-slate-600">
                 Sync contacts, call results, and create deals automatically
               </p>
+              <Link
+                href="/dashboard/help/hubspot-sync"
+                className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700"
+              >
+                How syncing works
+                <ExternalLink className="h-3 w-3" />
+              </Link>
               {hubspotStatus?.connected && hubspotStatus.hubspotAccountName && (
                 <p className="mt-1 text-xs text-slate-500">
                   Connected to: {hubspotStatus.hubspotAccountName}
@@ -161,7 +169,12 @@ export default function IntegrationsPage() {
         </div>
 
         {/* Settings (if connected) */}
-        {hubspotStatus?.connected && <HubSpotSettings />}
+        {hubspotStatus?.connected && (
+          <div className="space-y-4">
+            <HubSpotSettings />
+            <HubSpotSyncLog />
+          </div>
+        )}
       </section>
 
       {/* Google Sheets Integration */}

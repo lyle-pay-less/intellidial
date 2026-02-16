@@ -99,3 +99,48 @@ export async function sendInvitationEmail(
     throw error;
   }
 }
+
+const CONTACT_TO_EMAIL = "growth@Intellidial.co.za";
+
+/**
+ * Send contact form submission to growth@Intellidial.co.za via Resend
+ */
+export async function sendContactEmail(
+  fromEmail: string,
+  message: string,
+  fromName?: string
+): Promise<void> {
+  const resend = getResendClient();
+  const from = process.env.RESEND_FROM_EMAIL || "Intellidial <onboarding@resend.dev>";
+
+  const subject = fromName
+    ? `Contact from ${fromName} (${fromEmail})`
+    : `Contact from ${fromEmail}`;
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <p style="font-size: 14px; color: #64748b;">Landing page contact form — hello@intellidial.co.za</p>
+  <p><strong>From:</strong> ${fromName ? `${fromName} &lt;${fromEmail}&gt;` : fromEmail}</p>
+  <p><strong>Message:</strong></p>
+  <p style="white-space: pre-wrap; background: #f1f5f9; padding: 12px; border-radius: 8px;">${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>
+  <p style="font-size: 12px; color: #94a3b8;">Sent at ${new Date().toISOString()}</p>
+</body>
+</html>
+  `;
+
+  const { data, error } = await resend.emails.send({
+    from,
+    to: [CONTACT_TO_EMAIL],
+    replyTo: fromEmail,
+    subject,
+    html,
+  });
+
+  if (error) {
+    console.error("[Email] Resend contact error:", error);
+    throw new Error(`Resend API error: ${JSON.stringify(error)}`);
+  }
+  console.log(`[Email] Contact form sent to ${CONTACT_TO_EMAIL}: ${data?.id}`);
+}

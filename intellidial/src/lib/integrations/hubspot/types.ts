@@ -82,3 +82,30 @@ export type HubSpotDealStage = {
 export type HubSpotPipelinesResponse = {
   results: HubSpotPipeline[];
 };
+
+/** Contact list (segment) from HubSpot Lists API */
+export type HubSpotList = {
+  listId: string;
+  name: string;
+  objectTypeId?: string;
+  processingType?: string;
+};
+
+export type HubSpotListsSearchResponse = {
+  results: HubSpotList[];
+  paging?: {
+    next?: { after: string };
+  };
+};
+
+/** List membership: recordId is the contact ID */
+export type HubSpotListMembership = {
+  recordId: string;
+};
+
+export type HubSpotListMembershipsResponse = {
+  results: HubSpotListMembership[];
+  paging?: {
+    next?: { after: string };
+  };
+};
