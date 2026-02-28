@@ -126,6 +126,7 @@ type VapiCallPayload = {
   assistantId: string;
   phoneNumberId: string;
   customer: { number: string; name?: string };
+  assistantOverrides?: { variableValues?: Record<string, string> };
 };
 
 function getApiKey(): string | undefined {
@@ -643,6 +644,12 @@ export async function createOutboundCall(params: {
     customer: {
       number,
       ...(customerName ? { name: customerName.slice(0, 40) } : {}),
+    },
+    // {{customerName}} in firstMessage is filled from variableValues, not customer.name
+    assistantOverrides: {
+      variableValues: {
+        customerName: (customerName?.trim() || "the person who inquired").slice(0, 40),
+      },
     },
   };
 

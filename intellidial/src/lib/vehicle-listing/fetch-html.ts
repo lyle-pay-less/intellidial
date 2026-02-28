@@ -43,6 +43,11 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
       const page = await browser.newPage({
         userAgent: USER_AGENT,
         viewport: { width: 1280, height: 720 },
+        locale: "en-ZA",
+      });
+      await page.setExtraHTTPHeaders({
+        "Accept-Language": "en-ZA,en;q=0.9",
+        Referer: "https://www.autotrader.co.za/",
       });
       await page.goto(url, {
         waitUntil: "domcontentloaded",

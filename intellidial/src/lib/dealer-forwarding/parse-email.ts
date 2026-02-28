@@ -9,7 +9,7 @@ export type ParsedEnquiry = {
   vehicleLink: string;
 };
 
-const NAME_KEYS = /^(?:name|lead\s*name|contact\s*name|customer\s*name)\s*[:=]/i;
+const NAME_KEYS = /^(?:(?:lead\s*)?name|contact\s*name|customer\s*name|enquiry\s*from|contact)\s*[:=]/i;
 const PHONE_KEYS = /^(?:phone|contact\s*number|number|tel|cell|mobile)\s*[:=]/i;
 const LINK_KEYS = /^(?:link|vehicle\s*link|url|car\s*link|listing|advert)\s*[:=]/i;
 
@@ -72,7 +72,17 @@ export function parseEnquiryEmail(text: string, html?: string | null): ParsedEnq
   }
 
   if (!phone || !vehicleLink) return null;
-  if (!name) name = "Customer";
+  if (!name) {
+    // Fallback: first line that looks like "FirstName LastName" (2–3 words, no digits, before phone/link)
+    const lines = combined.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (line.length > 3 && line.length < 50 && /^[A-Za-z][A-Za-z\s\-']+$/.test(line) && !/\d/.test(line)) {
+        name = line;
+        break;
+      }
+    }
+  }
+  if (!name) name = "";
 
   if (!vehicleLink.startsWith("http")) vehicleLink = "https://" + vehicleLink;
 

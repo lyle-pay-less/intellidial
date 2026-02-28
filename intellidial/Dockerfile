@@ -31,20 +31,18 @@ ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
 ENV NEXT_PUBLIC_CALENDLY_URL=$NEXT_PUBLIC_CALENDLY_URL
 RUN npm run build
 
-# Production image, copy all the files and run next
-FROM base AS runner
+# Production image: use Playwright base for Chromium (bypasses 503 from AutoTrader)
+FROM mcr.microsoft.com/playwright:v1.49.0-noble AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-USER nextjs
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+# Standalone may omit playwright (dynamic import); ensure it's available
+COPY --from=deps /app/node_modules/playwright ./node_modules/playwright
+COPY --from=deps /app/node_modules/playwright-core ./node_modules/playwright-core
 
 EXPOSE 3000
 
