@@ -47,13 +47,14 @@ export async function PATCH(
     return NextResponse.json({ error: "contextLinks must be an array" }, { status: 400 });
   }
   if (Array.isArray(updates.contextLinks)) {
-    updates.contextLinks = (updates.contextLinks as unknown[]).map((l: unknown) => {
+    type ContextLink = { url: string; label: string | null };
+    updates.contextLinks = (updates.contextLinks as unknown[]).map((l: unknown): ContextLink | null => {
       if (l && typeof l === "object" && "url" in l && typeof (l as { url: unknown }).url === "string") {
         const obj = l as { url: string; label?: string | null };
         return { url: obj.url.trim(), label: typeof obj.label === "string" ? obj.label : null };
       }
       return null;
-    }).filter((l): l is { url: string; label?: string | null } => l !== null && (l as { url: string }).url !== "");
+    }).filter((l): l is ContextLink => l !== null && l.url !== "");
   }
   try {
     const updated = await updateDealer(id, updates as Parameters<typeof updateDealer>[1]);

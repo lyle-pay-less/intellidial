@@ -27,11 +27,11 @@ export async function POST(
 
   let body: { url?: string } = {};
   try {
-    body = (await req.json()) as { url?: string } | null;
+    const raw = (await req.json()) as { url?: string } | null;
+    if (raw && typeof raw === "object") body = raw;
   } catch {
     // No body is fine — use project.vehicleListingUrl
   }
-  if (!body || typeof body !== "object") body = {};
 
   const urlFromBody = typeof body.url === "string" ? body.url.trim() : "";
   const urlFromProject = project.vehicleListingUrl?.trim() ?? "";

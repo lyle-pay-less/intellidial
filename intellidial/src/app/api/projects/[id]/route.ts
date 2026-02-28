@@ -30,11 +30,6 @@ export async function GET(
     effectiveVehicleReferenceInstructions: project.vehicleReferenceInstructions ?? defaults.vehicleReference,
     effectiveVehicleIntroInstructions: project.vehicleIntroInstructions ?? defaults.vehicleIntro,
     effectiveBusinessContextHeaderInstructions: project.businessContextHeaderInstructions ?? defaults.businessContextHeader,
-    effectiveSchedulingInstructions: project.schedulingInstructions ?? defaults.scheduling,
-    effectiveVehicleContextHeaderInstructions: project.vehicleContextHeaderInstructions ?? defaults.vehicleContextHeader,
-    effectiveVehicleReferenceInstructions: project.vehicleReferenceInstructions ?? defaults.vehicleReference,
-    effectiveVehicleIntroInstructions: project.vehicleIntroInstructions ?? defaults.vehicleIntro,
-    effectiveBusinessContextHeaderInstructions: project.businessContextHeaderInstructions ?? defaults.businessContextHeader,
   });
 }
 

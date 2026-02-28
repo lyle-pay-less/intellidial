@@ -25,18 +25,19 @@ export async function POST(req: NextRequest) {
   const phoneNumber = typeof body?.phoneNumber === "string" ? body.phoneNumber.trim() || null : null;
   const operationHours = typeof body?.operationHours === "string" ? body.operationHours.trim() || null : null;
   const email = typeof body?.email === "string" ? body.email.trim() || null : null;
-  let contextLinks: Array<{ url: string; label?: string | null }> | null = null;
+  type ContextLink = { url: string; label: string | null };
+  let contextLinks: ContextLink[] | null = null;
   if (Array.isArray(body?.contextLinks)) {
-    contextLinks = body.contextLinks
-      .map((l: unknown) => {
+    const links = (body.contextLinks as unknown[])
+      .map((l: unknown): ContextLink | null => {
         if (l && typeof l === "object" && "url" in l && typeof (l as { url: unknown }).url === "string") {
           const obj = l as { url: string; label?: string | null };
           return { url: obj.url.trim(), label: typeof obj.label === "string" ? obj.label : null };
         }
         return null;
       })
-      .filter((l): l is { url: string; label?: string | null } => l !== null && l.url !== "");
-    if (contextLinks.length === 0) contextLinks = null;
+      .filter((l): l is ContextLink => l !== null && l.url !== "");
+    if (links.length > 0) contextLinks = links;
   }
   const dealer = await createDealer({
     orgId: org.orgId,
