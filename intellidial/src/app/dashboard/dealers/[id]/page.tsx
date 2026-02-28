@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthContext";
 import Link from "next/link";
-import { ProjectDetailContent } from "@/app/dashboard/projects/[id]/page";
+import { ProjectDetailContent } from "@/app/dashboard/projects/[id]/ProjectDetailContent";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 
 type Dealer = {
