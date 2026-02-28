@@ -4,15 +4,19 @@
  * Do not import this in client components; API key must stay on the server.
  */
 
-import type { ProjectDoc, AgentQuestion, CaptureField } from "@/lib/firebase/types";
+import type { ProjectDoc, CaptureField } from "@/lib/firebase/types";
 
 const VAPI_BASE = "https://api.vapi.ai";
 
 /** Project shape we need for building assistant config (id + assistantId/structuredOutputId optional for update). */
 export type ProjectForVapi = Pick<
   ProjectDoc,
-  "name" | "agentName" | "agentCompany" | "agentNumber" | "agentVoice" | "userGoal" | "businessContext" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields"
+  "name" | "agentName" | "agentCompany" | "agentNumber" | "agentVoice" | "userGoal" | "businessContext" | "agentInstructions" | "goal" | "tone" | "agentQuestions" | "captureFields" | "vehicleContextFullText" | "callContextInstructions" | "identityInstructions" | "endingCallInstructions" | "complianceInstructions" | "voiceOutputInstructions" | "vehiclePlaceholderInstructions" | "schedulingInstructions" | "vehicleContextHeaderInstructions" | "vehicleReferenceInstructions" | "vehicleIntroInstructions" | "businessContextHeaderInstructions"
 > & { id: string; assistantId?: string | null; structuredOutputId?: string | null };
+
+// Re-export dealer enrichment from shared module (used by ensureAssistant and test-assistant).
+export { enrichBusinessContextWithDealer } from "./prompt-builder";
+export type { DealerContactForPrompt } from "./prompt-builder";
 
 /** 11labs voice settings (from API or defaults when fetch not available). */
 export type ElevenLabsVoiceSettings = {
@@ -89,7 +93,12 @@ type VapiAssistantPayload = {
     modelId?: string;
   };
   firstMessage?: string;
-  transcriber?: { provider: string; model: string; language: string };
+  transcriber?: {
+    provider: string;
+    model: string;
+    language: string;
+    keywords?: string[];
+  };
   maxDurationSeconds?: number;
   silenceTimeoutSeconds?: number;
   responseDelaySeconds?: number;
@@ -103,6 +112,13 @@ type VapiAssistantPayload = {
   };
   /** When the assistant says one of these, VAPI ends the call (e.g. after saying goodbye). */
   endCallPhrases?: string[];
+  /** Assistant hooks (e.g. idle message when customer silent). */
+  hooks?: Array<{
+    on: string;
+    options?: { timeoutSeconds?: number; triggerMaxCount?: number; triggerResetMode?: string };
+    do: Array<{ type: string; exact?: string | string[] }>;
+    name?: string;
+  }>;
 };
 
 /** VAPI outbound call payload. */
@@ -241,57 +257,24 @@ export function getVoiceProviderAndId(voiceKey: string): { provider: string; voi
   return { provider: "11labs", voiceId };
 }
 
-/**
- * Build the system prompt for the VAPI assistant from project config.
- * Prepend agent identity (name, company, number) when set; then instructions, goal, tone, questions.
- * Does not include any contact PII.
- */
-function buildSystemPrompt(project: ProjectForVapi): string {
-  const parts: string[] = [];
-  // Who the agent is calling (VAPI fills {{customer.name}} and {{customer.number}} per call)
-  parts.push(
-    "CURRENT CALL: You are calling {{customer.name}} at {{customer.number}}. " +
-    "Use their name to personalize when you have it (e.g. 'Hi {{customer.name}}'). " +
-    "If the person's name is not provided, say 'Hi' or 'Hello'."
-  );
-  parts.push(
-    "IDENTITY: You work for this company. When referring to the business — hours, location, services, contact details — always use 'we', 'our', and 'us' (e.g. 'We are open 9 to 5', 'Our office is at...', 'You can reach us at...'). Never say 'they' or 'the company' as if you are external."
-  );
-  parts.push(
-    "ENDING THE CALL: When the person says goodbye, bye, hang up, or that they need to go, say a brief closing and end the call. Use a natural sign-off such as: Goodbye, Bye, Cheers, Take care, Sharp (SA), Thanks bye, Have a good one, or e.g. 'Thanks for your time. Goodbye.' Do not keep talking. 'Hang up' or 'please hang up' means they want to end this call now — say goodbye and end the call; it does NOT mean they want to be removed from the list."
-  );
-  parts.push(
-    "COMPLIANCE (South Africa / POPIA): If the person clearly asks to stop being called in future, to be removed from the list, or not to be contacted again, acknowledge and say you will ensure they are not called again. Do not confuse this with simply ending the current call (goodbye / hang up)."
-  );
-  const businessContext = (project.businessContext ?? "").trim();
-  if (businessContext) {
-    parts.push("BUSINESS CONTEXT (use this to answer questions about the company, location, hours, services):");
-    parts.push(businessContext);
-  }
+// Import prompt builder for local use; re-export for external consumers.
+import { SYSTEM_PROMPT_DEFAULTS, getSystemPromptDefaults, buildSystemPrompt } from "./prompt-builder";
+export { SYSTEM_PROMPT_DEFAULTS, getSystemPromptDefaults, buildSystemPrompt } from "./prompt-builder";
+
+/** Build firstMessage from project agentName and agentCompany. Uses {{customerName}} for VAPI to fill. */
+function buildFirstMessage(project: ProjectForVapi): string {
   const agentName = typeof project.agentName === "string" ? project.agentName.trim() : "";
   const agentCompany = typeof project.agentCompany === "string" ? project.agentCompany.trim() : "";
-  const agentNumber = typeof project.agentNumber === "string" ? project.agentNumber.trim() : "";
-  if (agentName || agentCompany || agentNumber) {
-    const identity: string[] = [];
-    if (agentName) identity.push(`You are ${agentName}.`);
-    if (agentCompany) identity.push(`You are calling on behalf of ${agentCompany}.`);
-    if (agentNumber) identity.push(`The number you are calling from is ${agentNumber}.`);
-    parts.push(identity.join(" "));
+  if (agentName && agentCompany) {
+    return `Hi, this is ${agentName} calling from ${agentCompany}. Am I speaking to {{customerName}}?`;
   }
-  const instructions = (project.agentInstructions ?? "").trim();
-  if (instructions) parts.push(instructions);
-  const goal = typeof project.goal === "string" ? project.goal.trim() : "";
-  if (goal) parts.push(`\nGOAL: ${goal}`);
-  const tone = typeof project.tone === "string" ? project.tone.trim() : "";
-  if (tone) parts.push(`\nTONE: ${tone}`);
-  const questions = (project.agentQuestions ?? []).filter((q) => (q as AgentQuestion).text?.trim());
-  if (questions.length > 0) {
-    parts.push("\nQUESTIONS TO COVER (work these into the conversation naturally):");
-    questions.forEach((q, i) => {
-      parts.push(`${i + 1}. ${(q as AgentQuestion).text.trim()}`);
-    });
+  if (agentName) {
+    return `Hi, this is ${agentName}. Am I speaking to {{customerName}}?`;
   }
-  return parts.join("\n").trim() || "You are a professional phone agent. Be concise and helpful.";
+  if (agentCompany) {
+    return `Hi, I'm calling from ${agentCompany}. Am I speaking to {{customerName}}?`;
+  }
+  return "Hi, am I speaking to {{customerName}}?";
 }
 
 /** Webhook base URL for end-of-call-report (must be reachable by VAPI, e.g. ngrok or deployed app). */
@@ -346,7 +329,9 @@ export async function buildAssistantConfig(
       messages: [{ role: "system", content: systemContent }],
     },
     voice: voicePayload,
-    firstMessage: "Hi, good day!",
+    // Initial line the agent says so it speaks first.
+    // Uses agentName and agentCompany from project; {{customerName}} is filled by VAPI.
+    firstMessage: buildFirstMessage(project),
     transcriber: {
       provider: "deepgram",
       model: "nova-2",
@@ -380,6 +365,28 @@ export async function buildAssistantConfig(
       "Shot",
       "Lekker, bye",
       "Good one",
+    ],
+    // After 7 seconds of customer silence, check if they're still there
+    hooks: [
+      {
+        on: "customer.speech.timeout",
+        options: {
+          timeoutSeconds: 7,
+          triggerMaxCount: 3,
+          triggerResetMode: "onUserSpeech",
+        },
+        do: [
+          {
+            type: "say",
+            exact: [
+              "Are you still there?",
+              "Can you hear me?",
+              "I'm here whenever you're ready to continue.",
+            ],
+          },
+        ],
+        name: "idle_check",
+      },
     ],
   };
 

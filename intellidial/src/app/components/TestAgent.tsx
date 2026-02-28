@@ -34,6 +34,8 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
   const [transcript, setTranscript] = useState<{ role: string; text: string }[]>([]);
   const [volumeLevel, setVolumeLevel] = useState(0);
   const [connectingMessageIndex, setConnectingMessageIndex] = useState(0);
+  const [testFirstName, setTestFirstName] = useState("");
+  const [testSurname, setTestSurname] = useState("");
   const vapiRef = useRef<Vapi | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
@@ -73,7 +75,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
     }
   }, [transcript]);
 
-  const startTest = useCallback(async (forceRefresh?: boolean) => {
+  const startTest = useCallback(async (forceRefresh?: boolean, firstName?: string, surname?: string) => {
     setConnecting(true);
     setConnectingMessageIndex(0);
     setError(null);
@@ -141,12 +143,21 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
         const normalized = n > 1 ? n / 100 : n;
         setVolumeLevel(Math.min(1, Math.max(0, normalized)));
       });
-      vapi.on("message", (message: { type?: string; role?: string; transcript?: string }) => {
-        if (message.type === "transcript" && message.role && message.transcript) {
-          const role = message.role;
-          const transcript = message.transcript;
-          setTranscript((prev) => [...prev, { role, text: transcript }]);
-        }
+      vapi.on("message", (message: { type?: string; role?: string; transcript?: string; transcriptType?: string }) => {
+        if (message.type !== "transcript" || !message.role || !message.transcript) return;
+        const isFinal = message.transcriptType === "final" || message.transcriptType === undefined;
+        if (!isFinal) return;
+        const role = message.role;
+        const text = message.transcript.trim();
+        if (!text) return;
+        setTranscript((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.role === role && last.text === text) return prev;
+          if (last && last.role === role) {
+            return [...prev.slice(0, -1), { role, text: last.text + " " + text }];
+          }
+          return [...prev, { role, text }];
+        });
       });
       vapi.on("error", (e: unknown) => {
         clearConnectionTimeout();
@@ -200,7 +211,15 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
       });
 
       vapiRef.current = vapi;
-      vapi.start(assistantId);
+      const fName = (firstName ?? testFirstName).trim();
+      const sName = (surname ?? testSurname).trim();
+      const fullName = [fName, sName].filter(Boolean).join(" ") || undefined;
+      if (fullName) {
+        const overrides = { variableValues: { customerName: fullName, customerNumber: "test" } };
+        (vapi.start as (id: string, overrides?: Record<string, unknown>) => void)(assistantId, overrides);
+      } else {
+        vapi.start(assistantId);
+      }
 
       connectionTimeoutId = window.setTimeout(() => {
         setConnecting((prev) => {
@@ -213,7 +232,7 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
       setError(e instanceof Error ? e.message : "Could not start test");
       setConnecting(false);
     }
-  }, [projectId, user?.uid]);
+  }, [projectId, user?.uid, testFirstName, testSurname]);
 
   const endCall = useCallback(() => {
     if (vapiRef.current) {
@@ -278,18 +297,48 @@ export function TestAgent({ projectId, projectName }: TestAgentProps) {
 
         <div className="relative z-10 p-8 flex flex-col items-center gap-5">
           {!callActive && !connecting && (
-            <div className="relative">
-              {/* Pulsing ring effect */}
-              <div className="absolute inset-0 rounded-xl bg-teal-400/30 animate-ping opacity-75" style={{ animationDuration: '2s' }}></div>
-              <div className="absolute inset-0 rounded-xl bg-cyan-400/20 animate-ping opacity-50" style={{ animationDuration: '2s', animationDelay: '0.5s' }}></div>
-              <button
-                type="button"
-                onClick={() => startTest()}
-                className="relative inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.05] active:scale-[0.98] border border-white/20 animate-heartbeat cursor-pointer shadow-lg shadow-teal-400/30"
-              >
-                <Mic className="w-5 h-5 relative z-10" />
-                <span className="relative z-10">Talk to your agent</span>
-              </button>
+            <div className="relative w-full max-w-sm space-y-4">
+              <div className="rounded-xl bg-slate-800/50 border border-white/10 p-4 space-y-3">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Test contact (optional)</p>
+                <p className="text-xs text-slate-500">The agent will use this name when addressing you (e.g. &quot;Hi, is this John?&quot;).</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="test-first-name" className="sr-only">First name</label>
+                    <input
+                      id="test-first-name"
+                      type="text"
+                      value={testFirstName}
+                      onChange={(e) => setTestFirstName(e.target.value)}
+                      placeholder="First name"
+                      className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="test-surname" className="sr-only">Surname</label>
+                    <input
+                      id="test-surname"
+                      type="text"
+                      value={testSurname}
+                      onChange={(e) => setTestSurname(e.target.value)}
+                      placeholder="Surname"
+                      className="w-full rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="relative">
+                {/* Pulsing ring effect */}
+                <div className="absolute inset-0 rounded-xl bg-teal-400/30 animate-ping opacity-75" style={{ animationDuration: '2s' }}></div>
+                <div className="absolute inset-0 rounded-xl bg-cyan-400/20 animate-ping opacity-50" style={{ animationDuration: '2s', animationDelay: '0.5s' }}></div>
+                <button
+                  type="button"
+                  onClick={() => startTest()}
+                  className="relative w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-teal-400 via-cyan-400 to-teal-400 bg-[length:200%_100%] animate-gradient-shift hover:animate-none text-slate-900 px-10 py-4 rounded-xl font-bold text-lg transition-all glow-teal-sm hover:glow-neon hover:scale-[1.05] active:scale-[0.98] border border-white/20 animate-heartbeat cursor-pointer shadow-lg shadow-teal-400/30"
+                >
+                  <Mic className="w-5 h-5 relative z-10" />
+                  <span className="relative z-10">Talk to your agent</span>
+                </button>
+              </div>
             </div>
           )}
           {connecting && (

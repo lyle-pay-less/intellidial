@@ -1,13 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getVapiHeaders } from "@/lib/vapi/client";
 
 /**
  * Returns VAPI demo assistant ID + public key for the website voice widget.
  * All from doctor .env: VAPI_DEMO_ASSISTANT_ID, VAPI_PUBLIC_KEY (from VAPI Dashboard → API Keys → Public).
+ * ?variant=dealers uses VAPI_DEMO_DEALERS_ASSISTANT_ID when set; otherwise falls back to default.
  * Also verifies the assistant exists and is valid.
  */
-export async function GET() {
-  const rawAssistantId = process.env.VAPI_DEMO_ASSISTANT_ID;
+export async function GET(request: NextRequest) {
+  const variant = request.nextUrl.searchParams.get("variant");
+  const useDealers = variant === "dealers";
+  const rawAssistantId = useDealers && process.env.VAPI_DEMO_DEALERS_ASSISTANT_ID
+    ? process.env.VAPI_DEMO_DEALERS_ASSISTANT_ID.trim()
+    : process.env.VAPI_DEMO_ASSISTANT_ID;
   const rawPublicKey = process.env.VAPI_PUBLIC_KEY;
   
   // Trim whitespace (Secret Manager might add newlines)

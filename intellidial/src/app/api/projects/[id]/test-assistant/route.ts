@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVapiHeaders, createOrUpdateAssistant } from "@/lib/vapi/client";
-import { getProject, updateProject } from "@/lib/data/store";
+import { getVapiHeaders, createOrUpdateAssistant, enrichBusinessContextWithDealer } from "@/lib/vapi/client";
+import { getProject, getDealer, updateProject } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
 import type { ProjectForVapi } from "@/lib/vapi/client";
 
@@ -38,6 +38,15 @@ export async function GET(
       );
     }
 
+    // When project is linked to a dealer, inject dealer contact details so the agent can give address, phone, email, hours
+    let businessContext = project.businessContext ?? undefined;
+    if (project.dealerId && project.orgId) {
+      const dealer = await getDealer(project.dealerId, project.orgId);
+      if (dealer) {
+        businessContext = enrichBusinessContextWithDealer(project.businessContext, dealer);
+      }
+    }
+
     // Build project for VAPI (same config as real calls, including business context)
     const projectForVapi: ProjectForVapi = {
       id: project.id,
@@ -47,12 +56,24 @@ export async function GET(
       agentNumber: project.agentNumber,
       agentVoice: project.agentVoice,
       userGoal: project.userGoal,
-      businessContext: project.businessContext,
+      businessContext: businessContext ?? null,
       agentInstructions: project.agentInstructions,
       goal: project.goal,
       tone: project.tone,
       agentQuestions: project.agentQuestions,
       captureFields: project.captureFields,
+      vehicleContextFullText: project.vehicleContextFullText,
+      callContextInstructions: project.callContextInstructions,
+      identityInstructions: project.identityInstructions,
+      endingCallInstructions: project.endingCallInstructions,
+      complianceInstructions: project.complianceInstructions,
+      voiceOutputInstructions: project.voiceOutputInstructions,
+      vehiclePlaceholderInstructions: project.vehiclePlaceholderInstructions,
+      schedulingInstructions: project.schedulingInstructions,
+      vehicleContextHeaderInstructions: project.vehicleContextHeaderInstructions,
+      vehicleReferenceInstructions: project.vehicleReferenceInstructions,
+      vehicleIntroInstructions: project.vehicleIntroInstructions,
+      businessContextHeaderInstructions: project.businessContextHeaderInstructions,
       assistantId: project.assistantId,
       structuredOutputId: project.structuredOutputId,
     };

@@ -6,7 +6,7 @@
  * Falls back to in-memory storage if Firebase is not available.
  */
 
-import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc, HubSpotIntegrationDoc, GoogleSheetsIntegrationDoc, GCPIntegrationDoc } from "@/lib/firebase/types";
+import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc, HubSpotIntegrationDoc, GoogleSheetsIntegrationDoc, GCPIntegrationDoc, DealerDoc, DealerContextLink } from "@/lib/firebase/types";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS, type HubSpotSyncLogDoc, type HubSpotSyncQueueDoc } from "@/lib/firebase/types";
@@ -15,6 +15,7 @@ const now = () => new Date().toISOString();
 
 type ProjectWithId = ProjectDoc & { id: string };
 type ContactWithId = ContactDoc & { id: string };
+type DealerWithId = DealerDoc & { id: string };
 
 /** Organizations: orgId -> { id, name, ownerId, createdAt, phone/plan/usage } */
 type Organization = {
@@ -63,6 +64,9 @@ const projectContacts = new Map<string, string[]>();
 const projectQueue = new Map<string, Set<string>>();
 /** Scheduled call times per contact: projectId -> contactId -> scheduledTime (HH:mm) */
 const contactScheduledTimes = new Map<string, Map<string, string>>();
+
+/** Dealers: dealerId -> DealerWithId (org-scoped via doc.orgId) */
+const dealers = new Map<string, DealerWithId>();
 
 /** Organizations: orgId -> Organization */
 const organizations = new Map<string, Organization>();
@@ -614,7 +618,10 @@ export async function duplicateProject(projectId: string, orgId: string): Promis
   return await getProject(newProject.id);
 }
 
-export async function listProjects(orgId: string): Promise<ProjectWithId[]> {
+export async function listProjects(
+  orgId: string,
+  options?: { dealerOnly?: boolean }
+): Promise<ProjectWithId[]> {
   if (isFirebaseAdminConfigured()) {
     try {
       const db = getFirebaseAdminFirestore();
@@ -626,15 +633,22 @@ export async function listProjects(orgId: string): Promise<ProjectWithId[]> {
         list.push(p);
         projects.set(doc.id, p);
       });
-      list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-      return list;
+      let result = list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      if (options?.dealerOnly) {
+        result = result.filter((p) => (p as ProjectWithId & { isDealerProject?: boolean }).isDealerProject === true);
+      }
+      return result;
     } catch (e) {
       console.warn("[Store] listProjects Firestore failed, using in-memory:", (e as Error).message);
     }
   }
-  return Array.from(projects.values())
-    .filter((p) => (p as ProjectWithId & { orgId?: string }).orgId === orgId)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  let list = Array.from(projects.values()).filter(
+    (p) => (p as ProjectWithId & { orgId?: string }).orgId === orgId
+  );
+  if (options?.dealerOnly) {
+    list = list.filter((p) => (p as ProjectWithId & { isDealerProject?: boolean }).isDealerProject === true);
+  }
+  return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 /** Build ProjectWithId from Firestore doc data (used by getProject and updateProject when loading from Firestore). */
@@ -672,6 +686,18 @@ function projectFromFirestoreDoc(
     callWindowStart: (d.callWindowStart as string | null) ?? null,
     callWindowEnd: (d.callWindowEnd as string | null) ?? null,
     googleSheetId: (d.googleSheetId as string | null) ?? null,
+    dealershipEnabled: (d.dealershipEnabled as boolean | null) ?? null,
+    vehicleListingUrl: (d.vehicleListingUrl as string | null) ?? null,
+    vehicleContextFullText: (d.vehicleContextFullText as string | null) ?? null,
+    vehicleContextUpdatedAt: (d.vehicleContextUpdatedAt as string | null) ?? null,
+    callContextInstructions: (d.callContextInstructions as string | null) ?? null,
+    identityInstructions: (d.identityInstructions as string | null) ?? null,
+    endingCallInstructions: (d.endingCallInstructions as string | null) ?? null,
+    complianceInstructions: (d.complianceInstructions as string | null) ?? null,
+    voiceOutputInstructions: (d.voiceOutputInstructions as string | null) ?? null,
+    vehiclePlaceholderInstructions: (d.vehiclePlaceholderInstructions as string | null) ?? null,
+    isDealerProject: (d.isDealerProject as boolean | null) ?? null,
+    dealerId: (d.dealerId as string | null) ?? null,
     createdAt: (d.createdAt as string) ?? now(),
     updatedAt: (d.updatedAt as string) ?? now(),
   } as ProjectWithId;
@@ -728,7 +754,7 @@ export async function getProjectByAssistantId(assistantId: string): Promise<Proj
 }
 
 export async function createProject(
-  data: { name: string; description?: string; orgId: string }
+  data: { name: string; description?: string; orgId: string; isDealerProject?: boolean; dealerId?: string | null }
 ): Promise<ProjectWithId> {
   const id = `proj-${Date.now()}`;
   const t = now();
@@ -741,6 +767,8 @@ export async function createProject(
     status: "draft",
     captureFields: [],
     agentInstructions: null,
+    isDealerProject: data.isDealerProject ?? (data.dealerId ? true : null),
+    dealerId: data.dealerId ?? null,
     createdAt: t,
     updatedAt: t,
   };
@@ -760,7 +788,7 @@ export async function createProject(
 
 export async function updateProject(
   id: string,
-  data: Partial<Pick<ProjectDoc, "name" | "description" | "agentName" | "agentCompany" | "agentNumber" | "agentPhoneNumberId" | "agentVoice" | "agentImageUrl" | "userGoal" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "businessContext" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "testAssistantId" | "structuredOutputId" | "googleSheetId">>
+  data: Partial<Pick<ProjectDoc, "name" | "description" | "agentName" | "agentCompany" | "agentNumber" | "agentPhoneNumberId" | "agentVoice" | "agentImageUrl" | "userGoal" | "industry" | "tone" | "goal" | "agentQuestions" | "captureFields" | "businessContext" | "agentInstructions" | "status" | "notifyOnComplete" | "surveyEnabled" | "callWindowStart" | "callWindowEnd" | "assistantId" | "testAssistantId" | "structuredOutputId" | "googleSheetId" | "dealershipEnabled" | "vehicleListingUrl" | "vehicleContextFullText" | "vehicleContextUpdatedAt" | "callContextInstructions" | "identityInstructions" | "endingCallInstructions" | "complianceInstructions" | "voiceOutputInstructions" | "vehiclePlaceholderInstructions" | "isDealerProject" | "dealerId">>
 ): Promise<ProjectWithId | null> {
   let project = projects.get(id) ?? null;
   // Load from Firestore if not in memory (e.g. after server restart) so we can still persist
@@ -797,6 +825,210 @@ export async function updateProject(
   }
   projects.set(id, updated);
   return updated;
+}
+
+/**
+ * Delete a project and all its contacts. Verifies project belongs to orgId.
+ * Removes from Firestore (contacts then project) and in-memory store.
+ */
+export async function deleteProject(projectId: string, orgId: string): Promise<boolean> {
+  const project = await getProject(projectId, orgId);
+  if (!project) return false;
+  const pid = project.id;
+  const contactIds = projectContacts.get(pid) ?? [];
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      // Delete all contacts for this project (Firestore batch limit 500)
+      const contactsSnap = await db
+        .collection(COLLECTIONS.contacts)
+        .where("projectId", "==", pid)
+        .get();
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < contactsSnap.docs.length; i += BATCH_SIZE) {
+        const batch = db.batch();
+        contactsSnap.docs.slice(i, i + BATCH_SIZE).forEach((doc) => batch.delete(doc.ref));
+        await batch.commit();
+      }
+      await db.collection(COLLECTIONS.projects).doc(pid).delete();
+    } catch (e) {
+      console.error("[Store] deleteProject Firestore failed:", (e as Error).message);
+      return false;
+    }
+  }
+
+  for (const cid of contactIds) contacts.delete(cid);
+  projectContacts.delete(pid);
+  projectQueue.delete(pid);
+  contactScheduledTimes.delete(pid);
+  projects.delete(pid);
+  return true;
+}
+
+// ---------- Dealers (separate entity, no project) ----------
+
+function dealerFromFirestoreDoc(docId: string, d: Record<string, unknown>, orgIdFallback: string): DealerWithId {
+  const rawLinks = d.contextLinks as DealerContextLink[] | null | undefined;
+  const contextLinks = Array.isArray(rawLinks)
+    ? rawLinks.map((l) => ({ url: l?.url ?? "", label: l?.label ?? null }))
+    : null;
+  return {
+    id: docId,
+    orgId: (d.orgId as string) ?? orgIdFallback,
+    name: (d.name as string) ?? "",
+    address: (d.address as string | null) ?? null,
+    phoneNumber: (d.phoneNumber as string | null) ?? null,
+    operationHours: (d.operationHours as string | null) ?? null,
+    email: (d.email as string | null) ?? null,
+    addressPronunciationNotes: (d.addressPronunciationNotes as string | null) ?? null,
+    contextLinks: contextLinks ?? null,
+    projectId: (d.projectId as string | null) ?? null,
+    forwardingEmail: (d.forwardingEmail as string | null) ?? null,
+    createdAt: (d.createdAt as string) ?? now(),
+    updatedAt: (d.updatedAt as string) ?? now(),
+  };
+}
+
+export async function listDealers(orgId: string): Promise<DealerWithId[]> {
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const snap = await db.collection(COLLECTIONS.dealers).where("orgId", "==", orgId).get();
+      const list: DealerWithId[] = [];
+      snap.forEach((doc) => {
+        const d = doc.data() as Record<string, unknown>;
+        const dealer = dealerFromFirestoreDoc(doc.id, d, orgId);
+        list.push(dealer);
+        dealers.set(doc.id, dealer);
+      });
+      return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    } catch (e) {
+      console.warn("[Store] listDealers Firestore failed, using in-memory:", (e as Error).message);
+    }
+  }
+  const list = Array.from(dealers.values()).filter((d) => d.orgId === orgId);
+  return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+}
+
+export async function getDealer(id: string, orgId?: string): Promise<DealerWithId | null> {
+  let dealer = dealers.get(id) ?? null;
+  if (!dealer && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.dealers).doc(id).get();
+      if (doc.exists && doc.data()) {
+        dealer = dealerFromFirestoreDoc(doc.id, doc.data()!, orgId ?? "");
+        dealers.set(doc.id, dealer);
+      }
+    } catch (e) {
+      console.warn("[Store] getDealer Firestore failed:", (e as Error).message);
+    }
+  }
+  if (!dealer) return null;
+  if (orgId && dealer.orgId !== orgId) return null;
+  return dealer;
+}
+
+export async function createDealer(data: {
+  orgId: string;
+  name: string;
+  address?: string | null;
+  phoneNumber?: string | null;
+  operationHours?: string | null;
+  email?: string | null;
+  contextLinks?: DealerContextLink[] | null;
+  projectId?: string | null;
+}): Promise<DealerWithId> {
+  const id = `dealer-${Date.now()}`;
+  const t = now();
+  const dealer: DealerWithId = {
+    id,
+    orgId: data.orgId,
+    name: data.name.trim(),
+    address: data.address?.trim() || null,
+    phoneNumber: data.phoneNumber?.trim() || null,
+    operationHours: data.operationHours?.trim() || null,
+    email: data.email?.trim() || null,
+    contextLinks: data.contextLinks ?? null,
+    projectId: data.projectId ?? null,
+    createdAt: t,
+    updatedAt: t,
+  };
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...doc } = dealer;
+      await db.collection(COLLECTIONS.dealers).doc(id).set(doc);
+    } catch (e) {
+      console.warn("[Store] createDealer Firestore failed, using in-memory only:", (e as Error).message);
+    }
+  }
+  dealers.set(id, dealer);
+  return dealer;
+}
+
+export async function updateDealer(
+  id: string,
+  data: Partial<Pick<DealerDoc, "name" | "address" | "phoneNumber" | "operationHours" | "email" | "addressPronunciationNotes" | "contextLinks" | "projectId" | "forwardingEmail">>
+): Promise<DealerWithId | null> {
+  let dealer = dealers.get(id) ?? null;
+  if (!dealer && isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const doc = await db.collection(COLLECTIONS.dealers).doc(id).get();
+      if (doc.exists && doc.data()) {
+        dealer = dealerFromFirestoreDoc(doc.id, doc.data()!, "");
+        dealers.set(doc.id, dealer);
+      }
+    } catch (e) {
+      console.warn("[Store] updateDealer load from Firestore failed:", (e as Error).message);
+    }
+  }
+  if (!dealer) return null;
+  const definedData = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  ) as Partial<DealerWithId>;
+  const updated: DealerWithId = {
+    ...dealer,
+    ...definedData,
+    updatedAt: now(),
+  };
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      const { id: _id, ...rawDoc } = updated;
+      const doc = Object.fromEntries(
+        Object.entries(rawDoc).filter(([, v]) => v !== undefined)
+      ) as Record<string, unknown>;
+      await db.collection(COLLECTIONS.dealers).doc(id).set(doc, { merge: true });
+    } catch (e) {
+      console.warn("[Store] updateDealer Firestore failed:", (e as Error).message);
+    }
+  }
+  dealers.set(id, updated);
+  return updated;
+}
+
+export async function deleteDealer(dealerId: string, orgId: string): Promise<boolean> {
+  const dealer = await getDealer(dealerId, orgId);
+  if (!dealer) return false;
+  const projectId = (dealer as DealerWithId & { projectId?: string | null }).projectId;
+  if (projectId) {
+    const ok = await deleteProject(projectId, orgId);
+    if (!ok) return false;
+  }
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const db = getFirebaseAdminFirestore();
+      await db.collection(COLLECTIONS.dealers).doc(dealerId).delete();
+    } catch (e) {
+      console.error("[Store] deleteDealer Firestore failed:", (e as Error).message);
+      return false;
+    }
+  }
+  dealers.delete(dealerId);
+  return true;
 }
 
 export function getProjectQueue(projectId: string): string[] {

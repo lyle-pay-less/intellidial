@@ -293,6 +293,9 @@ export default function LandingPage() {
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
+              <a href="/dealers" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
+                Dealers
+              </a>
               <a href="#how-it-works" className="text-slate-600 hover:text-teal-600 transition-colors font-medium">
                 How it Works
               </a>
@@ -339,6 +342,9 @@ export default function LandingPage() {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="md:hidden bg-white border-t border-slate-100 px-4 py-4 space-y-3 shadow-lg">
+            <a href="/dealers" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
+              Dealers
+            </a>
             <a href="#how-it-works" className="block text-slate-600 hover:text-teal-600 py-2 font-medium" onClick={() => setMobileMenuOpen(false)}>
               How it Works
             </a>

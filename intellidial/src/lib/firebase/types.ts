@@ -84,6 +84,86 @@ export type ProjectDoc = {
   callWindowEnd?: string | null;
   /** Google Sheet ID for export (user shares the sheet with service account). */
   googleSheetId?: string | null;
+  /** Dealership mode: when true, project has a vehicle listing URL and full vehicle context for the agent. */
+  dealershipEnabled?: boolean | null;
+  /** Vehicle listing URL (e.g. AutoTrader) — the car the customer enquired from. Used to fetch full context. */
+  vehicleListingUrl?: string | null;
+  /** Full text extracted from the vehicle listing page (no summarisation). Agent uses this to answer any question about the vehicle. */
+  vehicleContextFullText?: string | null;
+  /** When vehicle context was last refreshed (ISO). */
+  vehicleContextUpdatedAt?: string | null;
+  /** Editable system instructions (visible in UI). When null, built-in default is used. */
+  callContextInstructions?: string | null;
+  identityInstructions?: string | null;
+  endingCallInstructions?: string | null;
+  complianceInstructions?: string | null;
+  voiceOutputInstructions?: string | null;
+  vehiclePlaceholderInstructions?: string | null;
+  /** Scheduling behaviour when customer suggests a time outside business hours. */
+  schedulingInstructions?: string | null;
+  /** How the agent should use the vehicle listing data (header/intro for the context block). */
+  vehicleContextHeaderInstructions?: string | null;
+  /** How to refer to the vehicle — year/make/model only vs full trim name. */
+  vehicleReferenceInstructions?: string | null;
+  /** Call flow after confirming identity — intro, feature summary, then booking. */
+  vehicleIntroInstructions?: string | null;
+  /** Header text for the business context section in the prompt. */
+  businessContextHeaderInstructions?: string | null;
+  /** Scheduling behaviour when customer suggests a time outside business hours. */
+  schedulingInstructions?: string | null;
+  /** How the agent should use the vehicle listing data (header/intro for the context block). */
+  vehicleContextHeaderInstructions?: string | null;
+  /** How to refer to the vehicle — year/make/model only vs full trim name. */
+  vehicleReferenceInstructions?: string | null;
+  /** Call flow after confirming identity — intro, feature summary, then booking. */
+  vehicleIntroInstructions?: string | null;
+  /** Header text for the business context section in the prompt. */
+  businessContextHeaderInstructions?: string | null;
+  /** When true, project appears in Dealers panel (master-only dealer setups). */
+  isDealerProject?: boolean | null;
+  /** When set, this project is the linked project for this dealer (dealers panel opens this project). */
+  dealerId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** One link in a dealer's context links list (URL + optional label). */
+export type DealerContextLink = {
+  url: string;
+  label?: string | null;
+};
+
+/** Firestore: dealers (collection). Org-scoped; separate from projects. */
+export type DealerDoc = {
+  orgId: string;
+  /** Optional pronunciation notes for the address (e.g. "Voortrekker: say Foor-trekker (Afrikaans)"). Used when the agent says the address aloud. */
+  addressPronunciationNotes?: string | null;
+  /** Dealer name (required). */
+  name: string;
+  /** Physical address. */
+  address?: string | null;
+  /** Dealer phone number. */
+  phoneNumber?: string | null;
+  /** Operation hours, e.g. "Mon–Fri 8–17, Sat 8–12". */
+  operationHours?: string | null;
+  /** Email; stored for future linking (e.g. enquiries). */
+  email?: string | null;
+  /** Dealer name (required). */
+  name: string;
+  /** Physical address. */
+  address?: string | null;
+  /** Dealer phone number. */
+  phoneNumber?: string | null;
+  /** Operation hours, e.g. "Mon–Fri 8–17, Sat 8–12". */
+  operationHours?: string | null;
+  /** Email; stored for future linking (e.g. enquiries). */
+  email?: string | null;
+  /** Multiple URLs for dealer context (e.g. dealer site, AutoTrader). */
+  contextLinks?: DealerContextLink[] | null;
+  /** Linked project id (project has dealerId = this dealer's id). Opening dealer opens this project. */
+  projectId?: string | null;
+  /** Email to link enquiries back to this dealership (e.g. the address that forwards to leads@ so we know which dealer the lead came from). */
+  forwardingEmail?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -256,6 +336,7 @@ export type HubSpotSyncQueueDoc = {
 export const COLLECTIONS = {
   users: "users",
   projects: "projects",
+  dealers: "dealers",
   contacts: "contacts",
   organizations: "organizations",
   invitations: "invitations",

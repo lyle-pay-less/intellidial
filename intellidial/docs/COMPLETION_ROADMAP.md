@@ -26,6 +26,7 @@ What else needs to be done to complete the app. Grouped by priority and area.
 - **Build & deployment** — Next.js 16 compatibility fixed, Docker build working, Cloud Build CI/CD, deployed to Cloud Run (europe-west2)
 - **Custom domain** — Application Load Balancer configured, DNS set up for intellidial.co.za, SSL certificate provisioning
 - **Gemini Integration** — ✅ **DONE** — Gemini API implemented and used when `GEMINI_API_KEY` is set. See [backlog/GEMINI_INTEGRATION.md](./backlog/GEMINI_INTEGRATION.md).
+- **Dealer campaign page** — ✅ **DONE** — `/dealers` live with hero ("Call every AutoTrader lead back in 60 seconds"), 3 steps, CTA, dealer-specific voice demo (variant=dealers). Homepage "Dealers" nav links to `/dealers`. Wording "your new lead" / "qualify and book test drive" in place. Campaign is done; optional: homepage hero line or Car Dealership first in Use Cases if you want root URL to speak to dealers too. See [dealer_outreach/HOMEPAGE_AND_DEALER_PAGE_TODO.md](../../dealer_outreach/HOMEPAGE_AND_DEALER_PAGE_TODO.md).
 
 ---
 

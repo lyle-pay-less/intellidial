@@ -4,8 +4,8 @@
  * Phase 3: Create VAPI assistant (lazy, per project).
  */
 
-import { getProject, updateProject } from "@/lib/data/store";
-import { createOrUpdateAssistant, ensureStructuredOutput } from "./client";
+import { getProject, getDealer, updateProject } from "@/lib/data/store";
+import { createOrUpdateAssistant, ensureStructuredOutput, enrichBusinessContextWithDealer } from "./client";
 import type { ProjectForVapi } from "./client";
 
 const FAILED_CREATE_MESSAGE = "Failed to create agent. Try again.";
@@ -30,6 +30,18 @@ export async function ensureProjectAssistantId(
     throw new Error("Project not found");
   }
 
+  // When project is linked to a dealer, inject dealer contact details into business context for the agent
+  let projectForVapi: ProjectForVapi = project as ProjectForVapi;
+  if (project.dealerId && project.orgId) {
+    const dealer = await getDealer(project.dealerId, project.orgId);
+    if (dealer) {
+      projectForVapi = {
+        ...projectForVapi,
+        businessContext: enrichBusinessContextWithDealer(project.businessContext, dealer),
+      };
+    }
+  }
+
   try {
     const captureFields = project.captureFields ?? [];
     let structuredOutputId: string | null = null;
@@ -44,7 +56,7 @@ export async function ensureProjectAssistantId(
     }
 
     if (project.assistantId?.trim()) {
-      await createOrUpdateAssistant(project as ProjectForVapi);
+      await createOrUpdateAssistant(projectForVapi);
       // VAPI can apply assistant updates asynchronously; a short delay reduces the chance
       // the first call uses the previous voice (e.g. Rachel instead of the newly saved one).
       await new Promise((r) => setTimeout(r, 1500));
@@ -54,7 +66,7 @@ export async function ensureProjectAssistantId(
       return project.assistantId.trim();
     }
 
-    const assistantId = await createOrUpdateAssistant(project as ProjectForVapi);
+    const assistantId = await createOrUpdateAssistant(projectForVapi);
     await updateProject(projectId, { assistantId });
     return assistantId;
   } catch (err) {

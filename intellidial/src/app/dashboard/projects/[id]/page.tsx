@@ -31,6 +31,12 @@ import {
   HelpCircle,
   List,
   ChevronDown,
+  Car,
+  RefreshCw,
+  Eye,
+  RotateCcw,
+  Save,
+  Trash2,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import { getHubSpotContactUrl, formatTimeAgo } from "@/lib/integrations/hubspot/utils";
@@ -57,6 +63,7 @@ import type {
   CallResultEntry,
 } from "@/lib/firebase/types";
 import { TestAgent } from "@/app/components/TestAgent";
+import { buildSystemPrompt, enrichBusinessContextWithDealer } from "@/lib/vapi/prompt-builder";
 
 type ProjectWithId = ProjectDoc & { id: string };
 type ContactWithId = ContactDoc & { id: string };
@@ -76,10 +83,21 @@ const PAGE_SIZE = 20;
 const HOURLY_RATE = 300;
 const CHART_COLORS = { success: "#14B8A6", failed: "#ef4444", bar: "#14B8A6" };
 
-export default function ProjectDetailPage() {
+type DealerForSetup = {
+  id: string;
+  name: string;
+  address?: string | null;
+  phoneNumber?: string | null;
+  operationHours?: string | null;
+  email?: string | null;
+  contextLinks?: Array<{ url: string; label?: string | null }> | null;
+  /** Email to link enquiries back to this dealership (e.g. address that forwards to leads@). */
+  forwardingEmail?: string | null;
+};
+
+export function ProjectDetailContent({ projectId, embedded, dealer }: { projectId: string; embedded?: boolean; dealer?: DealerForSetup | null }) {
   const { user } = useAuth();
-  const params = useParams();
-  const id = params?.id as string;
+  const id = projectId;
   const authHeaders = useMemo<Record<string, string>>(
     () => (user?.uid ? { "x-user-id": user.uid } : {}) as Record<string, string>,
     [user?.uid]
@@ -190,7 +208,7 @@ export default function ProjectDetailPage() {
   };
 
   return (
-    <div className="p-6 md:p-8">
+    <div className={embedded ? "" : "p-6 md:p-8"}>
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl font-bold text-slate-900">
@@ -289,7 +307,7 @@ export default function ProjectDetailPage() {
         />
       )}
       {activeTab === "instructions" && (
-        <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} orgName={orgName} />
+        <InstructionsTab project={project} onUpdate={fetchProject} authHeaders={authHeaders} orgName={orgName} dealer={dealer} />
       )}
       {activeTab === "results" && (
         <ResultsTab
@@ -2401,11 +2419,13 @@ function InstructionsTab({
   onUpdate,
   authHeaders,
   orgName,
+  dealer,
 }: {
   project: ProjectWithId;
   onUpdate: () => void;
   authHeaders: Record<string, string>;
   orgName: string | null;
+  dealer?: DealerForSetup | null;
 }) {
   const [agentName, setAgentName] = useState(project.agentName ?? "");
   const [agentCompany, setAgentCompany] = useState(project.agentCompany ?? orgName ?? "");
@@ -2432,8 +2452,47 @@ function InstructionsTab({
   const [businessContext, setBusinessContext] = useState(
     project.businessContext ?? ""
   );
-  const [businessContextUrl, setBusinessContextUrl] = useState("");
+  const [businessContextUrls, setBusinessContextUrls] = useState<Array<{ url: string; label?: string }>>([{ url: "" }]);
   const [businessContextGenerateError, setBusinessContextGenerateError] = useState<string | null>(null);
+  const [dealershipEnabled, setDealershipEnabled] = useState(project.dealershipEnabled ?? false);
+  const [vehicleListingUrl, setVehicleListingUrl] = useState(project.vehicleListingUrl ?? "");
+  const [vehicleContextUpdatedAt, setVehicleContextUpdatedAt] = useState<string | null>(
+    project.vehicleContextUpdatedAt ?? null
+  );
+  const [refreshVehicleError, setRefreshVehicleError] = useState<string | null>(null);
+  const [callContextInstructions, setCallContextInstructions] = useState(
+    (project as ProjectWithId & { effectiveCallContextInstructions?: string }).effectiveCallContextInstructions ?? ""
+  );
+  const [identityInstructions, setIdentityInstructions] = useState(
+    (project as ProjectWithId & { effectiveIdentityInstructions?: string }).effectiveIdentityInstructions ?? ""
+  );
+  const [endingCallInstructions, setEndingCallInstructions] = useState(
+    (project as ProjectWithId & { effectiveEndingCallInstructions?: string }).effectiveEndingCallInstructions ?? ""
+  );
+  const [complianceInstructions, setComplianceInstructions] = useState(
+    (project as ProjectWithId & { effectiveComplianceInstructions?: string }).effectiveComplianceInstructions ?? ""
+  );
+  const [voiceOutputInstructions, setVoiceOutputInstructions] = useState(
+    (project as ProjectWithId & { effectiveVoiceOutputInstructions?: string }).effectiveVoiceOutputInstructions ?? ""
+  );
+  const [vehiclePlaceholderInstructions, setVehiclePlaceholderInstructions] = useState(
+    (project as ProjectWithId & { effectiveVehiclePlaceholderInstructions?: string }).effectiveVehiclePlaceholderInstructions ?? ""
+  );
+  const [schedulingInstructions, setSchedulingInstructions] = useState(
+    (project as ProjectWithId & { effectiveSchedulingInstructions?: string }).effectiveSchedulingInstructions ?? ""
+  );
+  const [vehicleContextHeaderInstructions, setVehicleContextHeaderInstructions] = useState(
+    (project as ProjectWithId & { effectiveVehicleContextHeaderInstructions?: string }).effectiveVehicleContextHeaderInstructions ?? ""
+  );
+  const [vehicleReferenceInstructions, setVehicleReferenceInstructions] = useState(
+    (project as ProjectWithId & { effectiveVehicleReferenceInstructions?: string }).effectiveVehicleReferenceInstructions ?? ""
+  );
+  const [vehicleIntroInstructions, setVehicleIntroInstructions] = useState(
+    (project as ProjectWithId & { effectiveVehicleIntroInstructions?: string }).effectiveVehicleIntroInstructions ?? ""
+  );
+  const [businessContextHeaderInstructions, setBusinessContextHeaderInstructions] = useState(
+    (project as ProjectWithId & { effectiveBusinessContextHeaderInstructions?: string }).effectiveBusinessContextHeaderInstructions ?? ""
+  );
   const [agentInstructions, setAgentInstructions] = useState(
     project.agentInstructions ?? ""
   );
@@ -2442,10 +2501,34 @@ function InstructionsTab({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [promptPreviewOpen, setPromptPreviewOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voicePreviewLoading, setVoicePreviewLoading] = useState(false);
   const [voicePreviewError, setVoicePreviewError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<string | null>(null);
+
+  const [dealerName, setDealerName] = useState("");
+  const [dealerAddress, setDealerAddress] = useState("");
+  const [dealerPhoneNumber, setDealerPhoneNumber] = useState("");
+  const [dealerOperationHours, setDealerOperationHours] = useState("");
+  const [dealerEmail, setDealerEmail] = useState("");
+  const [dealerAddressPronunciationNotes, setDealerAddressPronunciationNotes] = useState("");
+  const [dealerForwardingEmail, setDealerForwardingEmail] = useState("");
+  const [dealerSaving, setDealerSaving] = useState(false);
+  const [dealerSaveSuccess, setDealerSaveSuccess] = useState(false);
+  const [dealerError, setDealerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (dealer) {
+      setDealerName(dealer.name ?? "");
+      setDealerAddress(dealer.address ?? "");
+      setDealerPhoneNumber(dealer.phoneNumber ?? "");
+      setDealerOperationHours(dealer.operationHours ?? "");
+      setDealerEmail(dealer.email ?? "");
+      setDealerAddressPronunciationNotes((dealer as { addressPronunciationNotes?: string | null }).addressPronunciationNotes ?? "");
+      setDealerForwardingEmail(dealer.forwardingEmail ?? "");
+    }
+  }, [dealer?.id]);
 
   useEffect(() => {
     setAgentName(project.agentName ?? "");
@@ -2466,9 +2549,23 @@ function InstructionsTab({
     setTone(project.tone ?? "");
     setAgentQuestions(project.agentQuestions ?? []);
     setBusinessContext(project.businessContext ?? "");
+    setDealershipEnabled(project.dealershipEnabled ?? false);
+    setVehicleListingUrl(project.vehicleListingUrl ?? "");
+    setVehicleContextUpdatedAt(project.vehicleContextUpdatedAt ?? null);
+    setCallContextInstructions((project as ProjectWithId & { effectiveCallContextInstructions?: string }).effectiveCallContextInstructions ?? "");
+    setIdentityInstructions((project as ProjectWithId & { effectiveIdentityInstructions?: string }).effectiveIdentityInstructions ?? "");
+    setEndingCallInstructions((project as ProjectWithId & { effectiveEndingCallInstructions?: string }).effectiveEndingCallInstructions ?? "");
+    setComplianceInstructions((project as ProjectWithId & { effectiveComplianceInstructions?: string }).effectiveComplianceInstructions ?? "");
+    setVoiceOutputInstructions((project as ProjectWithId & { effectiveVoiceOutputInstructions?: string }).effectiveVoiceOutputInstructions ?? "");
+    setVehiclePlaceholderInstructions((project as ProjectWithId & { effectiveVehiclePlaceholderInstructions?: string }).effectiveVehiclePlaceholderInstructions ?? "");
+    setSchedulingInstructions((project as ProjectWithId & { effectiveSchedulingInstructions?: string }).effectiveSchedulingInstructions ?? "");
+    setVehicleContextHeaderInstructions((project as ProjectWithId & { effectiveVehicleContextHeaderInstructions?: string }).effectiveVehicleContextHeaderInstructions ?? "");
+    setVehicleReferenceInstructions((project as ProjectWithId & { effectiveVehicleReferenceInstructions?: string }).effectiveVehicleReferenceInstructions ?? "");
+    setVehicleIntroInstructions((project as ProjectWithId & { effectiveVehicleIntroInstructions?: string }).effectiveVehicleIntroInstructions ?? "");
+    setBusinessContextHeaderInstructions((project as ProjectWithId & { effectiveBusinessContextHeaderInstructions?: string }).effectiveBusinessContextHeaderInstructions ?? "");
     setAgentInstructions(project.agentInstructions ?? "");
     setSurveyEnabled(project.surveyEnabled ?? false);
-  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.agentImageUrl, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.businessContext, project.agentInstructions, project.surveyEnabled, orgName]);
+  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.agentImageUrl, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.businessContext, project.dealershipEnabled, project.vehicleListingUrl, project.vehicleContextUpdatedAt, project.agentInstructions, project.surveyEnabled, project.updatedAt, orgName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2567,9 +2664,9 @@ function InstructionsTab({
     }
   };
 
-  const generateBusinessContextFromUrl = async () => {
-    const url = businessContextUrl.trim();
-    if (!url) {
+  const generateBusinessContextFromUrl = async (url: string) => {
+    const u = url.trim();
+    if (!u) {
       setError("Enter a website URL first");
       return;
     }
@@ -2583,7 +2680,7 @@ function InstructionsTab({
           "Content-Type": "application/json",
           ...authHeaders,
         },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: u }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2593,7 +2690,7 @@ function InstructionsTab({
         return;
       }
       if (data.businessContext) {
-        setBusinessContext(data.businessContext);
+        setBusinessContext((prev) => (prev.trim() ? prev + "\n\n---\n\n" + data.businessContext : data.businessContext));
         setBusinessContextGenerateError(null);
       }
     } catch (err) {
@@ -2605,6 +2702,32 @@ function InstructionsTab({
     }
   };
 
+  const refreshVehicleContext = async () => {
+    if (!vehicleListingUrl.trim()) {
+      setRefreshVehicleError("Enter a vehicle listing URL first.");
+      return;
+    }
+    setGenerating("vehicleContext");
+    setRefreshVehicleError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/refresh-vehicle-context`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ url: vehicleListingUrl.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRefreshVehicleError(data.error ?? `Failed (${res.status})`);
+        return;
+      }
+      setVehicleContextUpdatedAt(data.vehicleContextUpdatedAt ?? new Date().toISOString());
+      await onUpdate();
+    } catch (err) {
+      setRefreshVehicleError(err instanceof Error ? err.message : "Failed to refresh vehicle context");
+    } finally {
+      setGenerating(null);
+    }
+  };
 
   const generateMoreQuestions = async () => {
     setGenerating("questions");
@@ -2695,6 +2818,19 @@ function InstructionsTab({
           captureFields,
           agentInstructions: agentInstructions.trim() || null,
           surveyEnabled,
+          dealershipEnabled,
+          vehicleListingUrl: vehicleListingUrl.trim() || null,
+          callContextInstructions: callContextInstructions.trim() || null,
+          identityInstructions: identityInstructions.trim() || null,
+          endingCallInstructions: endingCallInstructions.trim() || null,
+          complianceInstructions: complianceInstructions.trim() || null,
+          voiceOutputInstructions: voiceOutputInstructions.trim() || null,
+          vehiclePlaceholderInstructions: vehiclePlaceholderInstructions.trim() || null,
+          schedulingInstructions: schedulingInstructions.trim() || null,
+          vehicleContextHeaderInstructions: vehicleContextHeaderInstructions.trim() || null,
+          vehicleReferenceInstructions: vehicleReferenceInstructions.trim() || null,
+          vehicleIntroInstructions: vehicleIntroInstructions.trim() || null,
+          businessContextHeaderInstructions: businessContextHeaderInstructions.trim() || null,
         }),
       });
       if (!res.ok) {
@@ -2725,7 +2861,77 @@ function InstructionsTab({
     }
   };
 
+  const saveDealer = async () => {
+    if (!dealer?.id) return;
+    setDealerSaving(true);
+    setDealerError(null);
+    try {
+      const res = await fetch(`/api/dealers/${dealer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          name: dealerName.trim(),
+          address: dealerAddress.trim() || null,
+          phoneNumber: dealerPhoneNumber.trim() || null,
+          operationHours: dealerOperationHours.trim() || null,
+          email: dealerEmail.trim() || null,
+          addressPronunciationNotes: dealerAddressPronunciationNotes.trim() || null,
+          forwardingEmail: dealerForwardingEmail.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      setDealerSaveSuccess(true);
+      setTimeout(() => setDealerSaveSuccess(false), 2500);
+    } catch (err) {
+      setDealerError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setDealerSaving(false);
+    }
+  };
+
+  const previewBusinessContext = useMemo(() => {
+    const base = businessContext.trim() || null;
+    if (!dealer) return base;
+    return enrichBusinessContextWithDealer(base, {
+      address: dealerAddress.trim() || null,
+      phoneNumber: dealerPhoneNumber.trim() || null,
+      email: dealerEmail.trim() || null,
+      operationHours: dealerOperationHours.trim() || null,
+      addressPronunciationNotes: dealerAddressPronunciationNotes.trim() || null,
+    });
+  }, [businessContext, dealer, dealerAddress, dealerPhoneNumber, dealerEmail, dealerOperationHours, dealerAddressPronunciationNotes]);
+
+  const promptPreview = useMemo(() => buildSystemPrompt({
+    agentName, agentCompany, agentNumber,
+    businessContext: previewBusinessContext,
+    agentInstructions: agentInstructions.trim() || null,
+    goal: goal.trim() || null,
+    tone: tone.trim() || null,
+    agentQuestions,
+    vehicleContextFullText: project.vehicleContextFullText ?? null,
+    callContextInstructions: callContextInstructions.trim() || null,
+    identityInstructions: identityInstructions.trim() || null,
+    endingCallInstructions: endingCallInstructions.trim() || null,
+    complianceInstructions: complianceInstructions.trim() || null,
+    voiceOutputInstructions: voiceOutputInstructions.trim() || null,
+    vehiclePlaceholderInstructions: vehiclePlaceholderInstructions.trim() || null,
+    schedulingInstructions: schedulingInstructions.trim() || null,
+    vehicleContextHeaderInstructions: vehicleContextHeaderInstructions.trim() || null,
+    vehicleReferenceInstructions: vehicleReferenceInstructions.trim() || null,
+    vehicleIntroInstructions: vehicleIntroInstructions.trim() || null,
+    businessContextHeaderInstructions: businessContextHeaderInstructions.trim() || null,
+  }), [
+    agentName, agentCompany, agentNumber, previewBusinessContext, agentInstructions, goal, tone,
+    agentQuestions, project.vehicleContextFullText,
+    callContextInstructions, identityInstructions, endingCallInstructions,
+    complianceInstructions, voiceOutputInstructions, vehiclePlaceholderInstructions,
+    schedulingInstructions, vehicleContextHeaderInstructions, vehicleReferenceInstructions,
+    vehicleIntroInstructions, businessContextHeaderInstructions,
+  ]);
+
   const canGenerate = industry || industryOther;
+  const isDealershipVersion = !!dealer;
 
   const questionCount = agentQuestions.filter((q) => q.text.trim()).length;
   const stepsRaw = [
@@ -2733,8 +2939,12 @@ function InstructionsTab({
     { id: "goal", label: "Goal", hasContent: !!goal.trim() },
     { id: "industry", label: "Industry", hasContent: !!canGenerate },
     { id: "tone", label: "Tone", hasContent: !!tone.trim() },
-    { id: "questions", label: "Questions", hasContent: questionCount > 0 },
-    { id: "fields", label: "Field names", hasContent: captureFields.length >= questionCount && questionCount > 0 },
+    ...(isDealershipVersion
+      ? []
+      : [
+          { id: "questions", label: "Questions", hasContent: questionCount > 0 },
+          { id: "fields", label: "Field names", hasContent: captureFields.length >= questionCount && questionCount > 0 },
+        ]),
     { id: "survey", label: "Survey", hasContent: surveyAcknowledged },
     { id: "script", label: "Script", hasContent: !!agentInstructions.trim() },
   ];
@@ -2796,6 +3006,103 @@ function InstructionsTab({
           ))}
         </div>
       </div>
+
+      {/* Dealer setup — only when viewing from dealer route */}
+      {dealer && (
+        <div className="rounded-2xl border-2 border-teal-200 bg-gradient-to-br from-teal-50/50 to-cyan-50/30 p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+              <Car className="h-4 w-4 text-teal-600" />
+              Dealer setup
+            </h3>
+            <button
+              type="button"
+              onClick={saveDealer}
+              disabled={dealerSaving}
+              className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 hover:bg-teal-700 disabled:opacity-70"
+            >
+              {dealerSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {dealerSaving ? "Saving…" : dealerSaveSuccess ? "Saved" : "Save dealer setup"}
+            </button>
+          </div>
+          {dealerError && <p className="mb-4 text-sm text-red-600">{dealerError}</p>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Business name</label>
+              <input
+                type="text"
+                value={dealerName}
+                onChange={(e) => setDealerName(e.target.value)}
+                placeholder="e.g. Bargain Auto"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Phone number</label>
+              <input
+                type="text"
+                value={dealerPhoneNumber}
+                onChange={(e) => setDealerPhoneNumber(e.target.value)}
+                placeholder="e.g. +27 11 123 4567"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-slate-700 mb-1">Address</label>
+              <textarea
+                value={dealerAddress}
+                onChange={(e) => setDealerAddress(e.target.value)}
+                placeholder="Physical address"
+                rows={2}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Operation hours</label>
+              <input
+                type="text"
+                value={dealerOperationHours}
+                onChange={(e) => setDealerOperationHours(e.target.value)}
+                placeholder="e.g. Mon–Fri 8–17, Sat 8–12"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Email address</label>
+              <input
+                type="email"
+                value={dealerEmail}
+                onChange={(e) => setDealerEmail(e.target.value)}
+                placeholder="dealer@example.com"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Forwarding email (link enquiries to this dealer)</label>
+              <input
+                type="email"
+                value={dealerForwardingEmail}
+                onChange={(e) => setDealerForwardingEmail(e.target.value)}
+                placeholder="e.g. enquiries@dealer.co.za or leave empty"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-500">The email address that forwards to leads@ so we can link incoming enquiries to this dealership.</p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-slate-700 mb-1">Address pronunciation notes</label>
+              <input
+                type="text"
+                value={dealerAddressPronunciationNotes}
+                onChange={(e) => setDealerAddressPronunciationNotes(e.target.value)}
+                placeholder="e.g. Voortrekker: say Foor-trekker (Afrikaans)"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-500">How to say street/place names when reading the address aloud. Leave empty to use the default (Voortrekker → Foor-trekker).</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Test Your Agent — at top so user can try after saving */}
       {agentInstructions.trim() && (
         <div
@@ -2817,6 +3124,84 @@ function InstructionsTab({
         </div>
       )}
 
+      {/* Dealership: vehicle listing URL + full context for agent */}
+      <div className="rounded-2xl border-2 border-slate-200 bg-white p-6 shadow-sm">
+        <label className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+          <Car className="h-4 w-4 text-teal-600" />
+          Dealership
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          When enabled, add the vehicle listing URL (e.g. AutoTrader) that the customer enquired from. The agent will get full context from this page to introduce the vehicle and answer any question about it.
+        </p>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-slate-700">Dealership</span>
+          <div className="flex gap-4">
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="dealership"
+                checked={dealershipEnabled === true}
+                onChange={() => setDealershipEnabled(true)}
+                className="h-4 w-4 border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-slate-700">Yes</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input
+                type="radio"
+                name="dealership"
+                checked={dealershipEnabled === false}
+                onChange={() => setDealershipEnabled(false)}
+                className="h-4 w-4 border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-sm text-slate-700">No</span>
+            </label>
+          </div>
+        </div>
+        {dealershipEnabled && (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <input
+                type="url"
+                value={vehicleListingUrl}
+                onChange={(e) => {
+                  setVehicleListingUrl(e.target.value);
+                  setRefreshVehicleError(null);
+                }}
+                placeholder="https://autotrader.co.za/car-for-sale/..."
+                className="min-w-[200px] flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <button
+                type="button"
+                onClick={refreshVehicleContext}
+                disabled={!vehicleListingUrl.trim() || generating === "vehicleContext"}
+                className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+              >
+                {generating === "vehicleContext" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh vehicle context
+              </button>
+            </div>
+            {refreshVehicleError && (
+              <p className="mb-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{refreshVehicleError}</p>
+            )}
+            {vehicleContextUpdatedAt && (
+              <p className="text-xs text-slate-500">
+                Vehicle context last updated: {new Date(vehicleContextUpdatedAt).toLocaleString()}. The agent has full page context to answer questions about this vehicle.
+              </p>
+            )}
+            {dealershipEnabled && vehicleListingUrl.trim() && !vehicleContextUpdatedAt && !generating && (
+              <p className="text-xs text-amber-600">
+                Click &quot;Refresh vehicle context&quot; to load full listing content for the agent.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Business context — just above Goal */}
       <div
         className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
@@ -2835,31 +3220,74 @@ function InstructionsTab({
           )}
         </label>
         <p className="mb-3 text-xs text-slate-500">
-          What the company does, location, hours, contact person and details, key services. The agent uses this to answer caller questions. Paste a website URL to generate from the site, or type it yourself.
+          What the company does, location, hours, contact person and details, key services. The agent uses this to answer caller questions. Add URLs to generate from, or type it yourself.
         </p>
-        <div className="mb-3 flex flex-wrap gap-2">
-          <input
-            type="url"
-            value={businessContextUrl}
-            onChange={(e) => {
-              setBusinessContextUrl(e.target.value);
-              setBusinessContextGenerateError(null);
-            }}
-            placeholder="https://example.com"
-            className="min-w-[200px] flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
-          />
+        <div className="mb-3 space-y-3">
+          {businessContextUrls.map((item, i) => (
+            <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input
+                type="url"
+                value={item.url}
+                onChange={(e) => {
+                  setBusinessContextUrls((prev) => {
+                    const next = [...prev];
+                    if (!next[i]) return prev;
+                    next[i] = { ...next[i], url: e.target.value };
+                    return next;
+                  });
+                  setBusinessContextGenerateError(null);
+                }}
+                placeholder="https://example.com"
+                className="min-w-[200px] flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <input
+                type="text"
+                value={item.label ?? ""}
+                onChange={(e) => {
+                  setBusinessContextUrls((prev) => {
+                    const next = [...prev];
+                    if (!next[i]) return prev;
+                    next[i] = { ...next[i], label: e.target.value };
+                    return next;
+                  });
+                }}
+                placeholder="Label (optional)"
+                className="w-full sm:w-32 rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => generateBusinessContextFromUrl(item.url)}
+                disabled={!item.url.trim() || generating === "businessContext"}
+                className="flex shrink-0 items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+              >
+                {generating === "businessContext" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Generate
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setBusinessContextUrls((prev) =>
+                    prev.length <= 1 ? [{ url: "" }] : prev.filter((_, idx) => idx !== i)
+                  )
+                }
+                className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors shrink-0"
+                aria-label="Remove URL"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
           <button
             type="button"
-            onClick={generateBusinessContextFromUrl}
-            disabled={!businessContextUrl.trim() || generating === "businessContext"}
-            className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-teal-700 disabled:opacity-50"
+            onClick={() => setBusinessContextUrls((prev) => [...prev, { url: "" }])}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            {generating === "businessContext" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            Generate from URL
+            <Plus className="h-4 w-4" />
+            Add URL
           </button>
         </div>
         {businessContextGenerateError && (
@@ -2890,6 +3318,96 @@ function InstructionsTab({
         />
       </div>
 
+      {/* System instructions — visible and editable so behaviour is transparent */}
+      <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/50 p-6 shadow-sm">
+        <label className="mb-2 flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+          <Eye className="h-4 w-4 text-teal-600" />
+          System instructions (transparent)
+        </label>
+        <p className="mb-4 text-xs text-slate-500">
+          These instructions control how the agent behaves. Edit any block below; leave empty or click Reset to use the default. Changes apply after you click Save instructions.
+        </p>
+        <div className="space-y-4">
+          {[
+            { key: "callContextInstructions", label: "Call context", value: callContextInstructions, setValue: setCallContextInstructions, placeholder: "Who the agent is calling ({{customerName}}, {{customerNumber}})..." },
+            { key: "identityInstructions", label: "Identity", value: identityInstructions, setValue: setIdentityInstructions, placeholder: "Use we/our/us when referring to the business..." },
+            { key: "endingCallInstructions", label: "Ending the call", value: endingCallInstructions, setValue: setEndingCallInstructions, placeholder: "When to say goodbye and end the call..." },
+            { key: "complianceInstructions", label: "Compliance (e.g. POPIA)", value: complianceInstructions, setValue: setComplianceInstructions, placeholder: "Opt-out / do not call again..." },
+            { key: "voiceOutputInstructions", label: "Voice output", value: voiceOutputInstructions, setValue: setVoiceOutputInstructions, placeholder: "Numbers and years in words for TTS..." },
+            { key: "businessContextHeaderInstructions", label: "Business context header", value: businessContextHeaderInstructions, setValue: setBusinessContextHeaderInstructions, placeholder: "Header text for the business context section..." },
+            { key: "schedulingInstructions", label: "Scheduling", value: schedulingInstructions, setValue: setSchedulingInstructions, placeholder: "How to handle when customer picks a time outside business hours..." },
+            ...(dealershipEnabled ? [
+              { key: "vehiclePlaceholderInstructions" as const, label: "Vehicle placeholders & speech", value: vehiclePlaceholderInstructions, setValue: setVehiclePlaceholderInstructions, placeholder: "Replace [year] [make] [model]; speech-friendly phrasing..." },
+              { key: "vehicleContextHeaderInstructions" as const, label: "Vehicle context header", value: vehicleContextHeaderInstructions, setValue: setVehicleContextHeaderInstructions, placeholder: "How the agent should introduce and use the vehicle listing data..." },
+              { key: "vehicleReferenceInstructions" as const, label: "Vehicle reference", value: vehicleReferenceInstructions, setValue: setVehicleReferenceInstructions, placeholder: "How to refer to the vehicle — year/make/model only vs full trim..." },
+              { key: "vehicleIntroInstructions" as const, label: "Vehicle intro flow", value: vehicleIntroInstructions, setValue: setVehicleIntroInstructions, placeholder: "Call flow after confirming identity — intro, feature summary, then booking..." },
+            ] : []),
+          ].map(({ key, label, value, setValue, placeholder }) => (
+            <div key={key} className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-600">{label}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await fetch(`/api/projects/${project.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json", ...authHeaders },
+                      body: JSON.stringify({ [key]: null }),
+                    });
+                    if (res.ok) await onUpdate();
+                  }}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset to default
+                </button>
+              </div>
+              <textarea
+                value={value}
+                onChange={(e) => { setValue(e.target.value); setSaved(false); }}
+                placeholder={placeholder}
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-y"
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview Full Prompt — shows exactly what the agent receives */}
+      <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/30 p-6 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setPromptPreviewOpen((v) => !v)}
+          className="flex w-full items-center justify-between gap-2"
+        >
+          <span className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+            <Eye className="h-4 w-4 text-amber-600" />
+            Preview full prompt
+          </span>
+          <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${promptPreviewOpen ? "rotate-180" : ""}`} />
+        </button>
+        {promptPreviewOpen && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs text-slate-500">
+              This is the exact system prompt the agent receives. It updates live as you edit fields above. What you see here is what the agent gets — nothing hidden.
+            </p>
+            <div className="relative">
+              <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-xl border border-amber-200 bg-white p-4 text-xs text-slate-700 leading-relaxed">
+                {promptPreview}
+              </pre>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard.writeText(promptPreview); }}
+                className="absolute right-3 top-3 rounded-md bg-white/80 p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                title="Copy full prompt"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <p className="text-sm text-slate-600">
         Start with your goal, then set agent identity and follow the steps. Use &quot;Enhance with AI&quot; to structure and improve your goal.
@@ -3128,176 +3646,180 @@ function InstructionsTab({
         />
       </div>
 
-      {/* Questions */}
-      <div
-        className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
-          nextStep === "questions"
-            ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
-            : "border-slate-200 bg-white"
-        }`}
-      >
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
-            <FileText className="h-4 w-4 text-teal-600" />
-            Questions ({agentQuestions.length})
-            {nextStep === "questions" && (
-              <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
-                Next step
-              </span>
+      {/* Questions — hidden for dealership version */}
+      {!isDealershipVersion && (
+        <div
+          className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
+            nextStep === "questions"
+              ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
+              : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <label className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+              <FileText className="h-4 w-4 text-teal-600" />
+              Questions ({agentQuestions.length})
+              {nextStep === "questions" && (
+                <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
+                  Next step
+                </span>
+              )}
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => generate("questions")}
+                disabled={!canGenerate || generating === "questions"}
+                className={`animate-glisten flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
+                  nextStep === "questions"
+                    ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:bg-teal-700"
+                    : "bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                }`}
+              >
+                {generating === "questions" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                Generate 5 questions
+              </button>
+              <button
+                type="button"
+                onClick={generateMoreQuestions}
+                disabled={!canGenerate || generating === "questions" || agentQuestions.length >= 10}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Generate more
+              </button>
+              <button
+                type="button"
+                onClick={addQuestion}
+                className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+            </div>
+          </div>
+          <p className="mb-3 text-xs text-slate-500">
+            Questions the agent asks during the call. Default 5; generate more or add manually.
+          </p>
+          <div className="space-y-2">
+            {agentQuestions.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500">
+                No questions yet. Generate or add manually.
+              </p>
+            ) : (
+              agentQuestions.map((q, i) => (
+                <div
+                  key={q.id}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-medium text-teal-700">
+                    {i + 1}
+                  </span>
+                  <input
+                    type="text"
+                    value={q.text}
+                    onChange={(e) => updateQuestion(i, e.target.value)}
+                    placeholder={`Question ${i + 1}`}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeQuestion(i)}
+                    className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
             )}
-          </label>
-          <div className="flex flex-wrap gap-2">
+          </div>
+        </div>
+      )}
+
+      {/* Field names (Excel) — hidden for dealership version */}
+      {!isDealershipVersion && (
+        <div
+          className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
+            nextStep === "fields"
+              ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
+              : "border-slate-200 bg-gradient-to-br from-emerald-50/50 to-white"
+          }`}
+        >
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
+              <BarChart3 className="h-4 w-4 text-emerald-600" />
+              Field names (Excel)
+              {nextStep === "fields" && (
+                <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
+                  Next step
+                </span>
+              )}
+            </label>
             <button
               type="button"
-              onClick={() => generate("questions")}
-              disabled={!canGenerate || generating === "questions"}
+              onClick={() => generate("fieldNames")}
+              disabled={agentQuestions.length === 0 || generating === "fieldNames"}
               className={`animate-glisten flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                nextStep === "questions"
+                nextStep === "fields"
                   ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:bg-teal-700"
-                  : "bg-teal-50 text-teal-700 hover:bg-teal-100 disabled:opacity-50"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
               }`}
             >
-              {generating === "questions" ? (
+              {generating === "fieldNames" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
-              Generate 5 questions
-            </button>
-            <button
-              type="button"
-              onClick={generateMoreQuestions}
-              disabled={!canGenerate || generating === "questions" || agentQuestions.length >= 10}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              Generate more
-            </button>
-            <button
-              type="button"
-              onClick={addQuestion}
-              className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add
+              Generate from questions
             </button>
           </div>
-        </div>
-        <p className="mb-3 text-xs text-slate-500">
-          Questions the agent asks during the call. Default 5; generate more or add manually.
-        </p>
-        <div className="space-y-2">
-          {agentQuestions.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center text-sm text-slate-500">
-              No questions yet. Generate or add manually.
+          <p className="mb-3 text-xs text-slate-500">
+            Column names for exported data. AI generates from your questions.
+          </p>
+          {captureFields.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-sm text-slate-500">
+              Generate field names from your questions above.
             </p>
           ) : (
-            agentQuestions.map((q, i) => (
-              <div
-                key={q.id}
-                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"
-              >
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-medium text-teal-700">
-                  {i + 1}
-                </span>
-                <input
-                  type="text"
-                  value={q.text}
-                  onChange={(e) => updateQuestion(i, e.target.value)}
-                  placeholder={`Question ${i + 1}`}
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeQuestion(i)}
-                  className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove"
+            <div className="space-y-2">
+              {captureFields.map((f, i) => (
+                <div
+                  key={f.key}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"
                 >
-                  ×
-                </button>
-              </div>
-            ))
+                  <input
+                    type="text"
+                    value={f.key}
+                    onChange={(e) => updateField(i, { key: e.target.value })}
+                    placeholder="field_key"
+                    className="w-40 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                  />
+                  <span className="text-slate-400">→</span>
+                  <input
+                    type="text"
+                    value={f.label}
+                    onChange={(e) => updateField(i, { label: e.target.value })}
+                    placeholder="Label"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeField(i)}
+                    className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-
-      {/* Field names (Excel) */}
-      <div
-        className={`rounded-2xl border-2 p-6 shadow-sm transition-all ${
-          nextStep === "fields"
-            ? "border-teal-500 bg-teal-50/30 ring-2 ring-teal-500/20"
-            : "border-slate-200 bg-gradient-to-br from-emerald-50/50 to-white"
-        }`}
-      >
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <label className="flex items-center gap-2 font-display text-sm font-semibold text-slate-900">
-            <BarChart3 className="h-4 w-4 text-emerald-600" />
-            Field names (Excel)
-            {nextStep === "fields" && (
-              <span className="rounded-full bg-teal-500 px-2 py-0.5 text-xs font-bold text-white">
-                Next step
-              </span>
-            )}
-          </label>
-          <button
-            type="button"
-            onClick={() => generate("fieldNames")}
-            disabled={agentQuestions.length === 0 || generating === "fieldNames"}
-            className={`animate-glisten flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-              nextStep === "fields"
-                ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:bg-teal-700"
-                : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-            }`}
-          >
-            {generating === "fieldNames" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            Generate from questions
-          </button>
-        </div>
-        <p className="mb-3 text-xs text-slate-500">
-          Column names for exported data. AI generates from your questions.
-        </p>
-        {captureFields.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-sm text-slate-500">
-            Generate field names from your questions above.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {captureFields.map((f, i) => (
-              <div
-                key={f.key}
-                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-3"
-              >
-                <input
-                  type="text"
-                  value={f.key}
-                  onChange={(e) => updateField(i, { key: e.target.value })}
-                  placeholder="field_key"
-                  className="w-40 rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
-                />
-                <span className="text-slate-400">→</span>
-                <input
-                  type="text"
-                  value={f.label}
-                  onChange={(e) => updateField(i, { label: e.target.value })}
-                  placeholder="Label"
-                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeField(i)}
-                  className="rounded p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
-                  aria-label="Remove"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Survey toggle */}
       <div
@@ -3357,7 +3879,7 @@ function InstructionsTab({
           <button
             type="button"
             onClick={() => generate("script")}
-            disabled={!tone || !goal || agentQuestions.length === 0 || generating === "script"}
+            disabled={!tone || !goal || (!isDealershipVersion && agentQuestions.length === 0) || generating === "script"}
             className={`animate-glisten flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
               nextStep === "script"
                 ? "bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:bg-teal-700"
@@ -3373,12 +3895,17 @@ function InstructionsTab({
           </button>
         </div>
         <p className="mb-3 text-xs text-slate-500">
-          Full instructions for the AI. Generated from tone, goal, and questions; editable.
+          {isDealershipVersion
+            ? "Full instructions for the AI. Generated from tone and goal; editable."
+            : "Full instructions for the AI. Generated from tone, goal, and questions; editable."}
         </p>
         <textarea
           value={agentInstructions}
-          onChange={(e) => setAgentInstructions(e.target.value)}
-          placeholder="e.g. Introduce yourself. Ask if they're interested. Work through the questions naturally. Thank them for their time."
+          onChange={(e) => {
+            setAgentInstructions(e.target.value);
+            setSaved(false);
+          }}
+          placeholder={isDealershipVersion ? "e.g. Introduce yourself as calling from [Dealership]. Confirm interest in the vehicle. Qualify and book a viewing or test drive. Thank them." : "e.g. Introduce yourself. Ask if they're interested. Work through the questions naturally. Thank them for their time."}
           rows={10}
           className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none resize-y"
         />
@@ -3393,7 +3920,7 @@ function InstructionsTab({
       <button
         type="button"
         onClick={handleSave}
-        disabled={saving || saved}
+        disabled={saving}
         className={`relative flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-sm font-semibold shadow-lg transition-all duration-300 overflow-hidden ${
           saved
             ? "bg-emerald-600 text-white shadow-emerald-500/30 scale-[0.99]"
@@ -4008,4 +4535,10 @@ function ExportTab({
       </div>
     </div>
   );
+}
+
+export default function ProjectDetailPage() {
+  const params = useParams();
+  const id = params?.id as string;
+  return <ProjectDetailContent projectId={id} />;
 }

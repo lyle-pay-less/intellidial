@@ -41,7 +41,7 @@ You have something 99% of cold emailers don't: **real proof the dealer is losing
 - **Yes, but only in your email signature**, not in the body. Something like:
 
 ```
-Lasse [Surname]
+Lyle [Surname]
 Intellidial — AI Speed-to-Lead for Dealerships
 intellidial.co.za
 ```
@@ -128,7 +128,7 @@ The setup takes 5 minutes: you forward your leads email to us, and we call immed
 
 Would it be worth a quick 15-minute chat this week to see if this fits?
 
-Lasse
+Lyle
 Intellidial — AI Speed-to-Lead for Dealerships
 intellidial.co.za
 ```
@@ -156,7 +156,7 @@ No app to install, no system to learn. You just forward your leads email to us a
 
 Worth a quick chat to see if this could help your close rate?
 
-Lasse
+Lyle
 Intellidial — AI Speed-to-Lead for Dealerships
 intellidial.co.za
 ```
@@ -184,7 +184,7 @@ The pilot is dead simple: forward your leads email to us, and we start calling. 
 
 Would it be worth 15 minutes this week to walk you through it?
 
-Lasse
+Lyle
 Intellidial — AI Speed-to-Lead for Dealerships
 intellidial.co.za
 ```
@@ -227,7 +227,7 @@ Just floating this to the top in case it got buried.
 
 Happy to close the loop if it's not relevant — just let me know.
 
-Lasse
+Lyle
 ```
 
 **Why this works:** It's 2 lines. No pressure. Respects their time. Many people reply to bumps because they feel bad ignoring a short, polite message.
@@ -247,7 +247,7 @@ I recorded a quick 90-second walkthrough showing what happens when a lead comes 
 
 If this isn't a priority right now, no worries at all.
 
-Lasse
+Lyle
 ```
 
 **This is where the demo video goes** — not email #1.
@@ -267,7 +267,7 @@ If speed-to-lead isn't a priority right now, I completely understand. But if thi
 
 All the best with [Dealer Name].
 
-Lasse
+Lyle
 ```
 
 **Why this works:** The "breakup email" consistently gets the highest reply rate in any sequence. People respond when they think they're about to lose an option.

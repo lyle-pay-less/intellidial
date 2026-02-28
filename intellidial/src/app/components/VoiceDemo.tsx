@@ -21,15 +21,33 @@ const CONNECTING_MESSAGES = [
   "Almost there…",
 ];
 
+const DEALER_CONNECTING_MESSAGES = [
+  "Connecting…",
+  "Setting up your dealer demo",
+  "Preparing the 60-second callback demo",
+  "Every AutoTrader lead called back in 60 seconds",
+  "Qualify the buyer, book the test drive",
+  "Full transcript and recording every time",
+  "HubSpot sync for dealers",
+  "Almost there…",
+];
+
+export type VoiceDemoVariant = "default" | "dealers";
+
 /**
  * Voice demo: one button starts the call. Volume-reactive wave, live transcript, email + Book CTA.
  * Creds from doctor .env via /api/demo-assistant.
+ * variant="dealers" uses dealer-specific copy and optional VAPI_DEMO_DEALERS_ASSISTANT_ID.
  */
 export interface VoiceDemoRef {
   startDemo: () => void;
 }
 
-export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
+export interface VoiceDemoProps {
+  variant?: VoiceDemoVariant;
+}
+
+export const VoiceDemo = forwardRef<VoiceDemoRef, VoiceDemoProps>(({ variant = "default" }, ref) => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [callActive, setCallActive] = useState(false);
@@ -60,7 +78,8 @@ export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
     setVolumeLevel(0);
 
     try {
-      const res = await fetch("/api/demo-assistant");
+      const params = variant === "dealers" ? "?variant=dealers" : "";
+      const res = await fetch(`/api/demo-assistant${params}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Demo not configured");
@@ -158,7 +177,7 @@ export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
       setError(e instanceof Error ? e.message : "Could not start");
       setConnecting(false);
     }
-  }, []);
+  }, [variant]);
 
   useImperativeHandle(ref, () => ({
     startDemo,
@@ -179,14 +198,16 @@ export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
     };
   }, []);
 
+  const connectingMessages = variant === "dealers" ? DEALER_CONNECTING_MESSAGES : CONNECTING_MESSAGES;
+
   // Rotate connecting messages every 2.5s while connecting
   useEffect(() => {
     if (!connecting) return;
     const id = window.setInterval(() => {
-      setConnectingMessageIndex((prev) => (prev + 1) % CONNECTING_MESSAGES.length);
+      setConnectingMessageIndex((prev) => (prev + 1) % connectingMessages.length);
     }, 2500);
     return () => window.clearInterval(id);
-  }, [connecting]);
+  }, [connecting, connectingMessages.length]);
 
   const vol = callActive ? volumeLevel : 0;
   const waveScale = 0.7 + vol * 0.6;
@@ -245,14 +266,16 @@ export const VoiceDemo = forwardRef<VoiceDemoRef>((props, ref) => {
           <div className="flex items-center justify-center gap-3 min-h-[2.5rem] px-5 py-3 rounded-xl bg-slate-900/70 border border-teal-500/20 shadow-lg shadow-teal-500/10">
             <Loader2 className="w-5 h-5 animate-spin shrink-0 text-cyan-400" />
             <span className="text-slate-100 font-semibold text-base text-center">
-              {CONNECTING_MESSAGES[connectingMessageIndex]}
+              {connectingMessages[connectingMessageIndex]}
             </span>
           </div>
         )}
         {callActive && (
           <div className="flex flex-col items-center gap-4 w-full max-w-lg">
             <p className="text-slate-200 text-sm font-medium text-center">
-              Call live — speak now. Ask about pricing, use cases, or how it works.
+              {variant === "dealers"
+                ? "Call live — ask about the 60-second callback, test drive booking, or HubSpot for dealers."
+                : "Call live — speak now. Ask about pricing, use cases, or how it works."}
             </p>
             <button
               type="button"

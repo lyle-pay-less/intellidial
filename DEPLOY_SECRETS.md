@@ -19,6 +19,9 @@ Create these in [Secret Manager](https://console.cloud.google.com/security/secre
 | `eleven-labs-api-key` | ELEVEN_LABS_API_KEY | ElevenLabs (voice preview in app) |
 | `google-sheets-service-account-json` | GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON | Service account JSON string (Export to Sheets) |
 | `next-public-app-url` | NEXT_PUBLIC_APP_URL | App URL (e.g. `https://intellidial-xxx.run.app`) for webhooks + invite emails |
+| `resend-api-key` | RESEND_API_KEY | Resend API key (sending + receiving) |
+| `resend-from-email` | RESEND_FROM_EMAIL | Resend from address (e.g. `Intellidial <noreply@...>`) |
+| `resend-webhook-secret` | RESEND_WEBHOOK_SECRET | Resend inbound webhook signing secret (Svix) for `/api/webhooks/resend/inbound` |
 | `hubspot-client-id` | HUBSPOT_CLIENT_ID | HubSpot OAuth app client ID |
 | `hubspot-client-secret` | HUBSPOT_CLIENT_SECRET | HubSpot OAuth app client secret |
 | `hubspot-redirect-uri` | HUBSPOT_REDIRECT_URI | HubSpot OAuth redirect URI (e.g. `https://intellidial.co.za/dashboard/integrations?hubspot_connected=true`) |
@@ -31,7 +34,7 @@ Create these in [Secret Manager](https://console.cloud.google.com/security/secre
 | `next-public-firebase-app-id` | NEXT_PUBLIC_FIREBASE_APP_ID | Firebase client config |
 | `next-public-calendly-url` | NEXT_PUBLIC_CALENDLY_URL | Calendly booking URL for "Book Demo" button (public, embedded in client) |
 
-**Total: 19 secrets** (6 VAPI/Gemini/Google/ElevenLabs/Sheets/App URL + 3 HubSpot + 1 Encryption Key + 6 Firebase NEXT_PUBLIC_ + 1 Calendly + 2 already existed).
+**Total: 20 secrets** (6 VAPI/Gemini/Google/ElevenLabs/Sheets/App URL + 3 HubSpot + 1 Encryption Key + 6 Firebase NEXT_PUBLIC_ + 1 Calendly + 2 already existed).
 
 ---
 
@@ -54,10 +57,11 @@ echo -n "YOUR_HUBSPOT_CLIENT_SECRET" | gcloud secrets create hubspot-client-secr
 echo -n "https://intellidial.co.za/dashboard/integrations?hubspot_connected=true" | gcloud secrets create hubspot-redirect-uri --data-file=-
 echo -n "YOUR_64_CHAR_HEX_ENCRYPTION_KEY" | gcloud secrets create integration-encryption-key --data-file=-
 echo -n "https://calendly.com/growth-intellidial/30min" | gcloud secrets create next-public-calendly-url --data-file=-
+echo -n "YOUR_RESEND_WEBHOOK_SECRET" | gcloud secrets create resend-webhook-secret --data-file=-
 
 # Grant Cloud Run service account access to the new secret(s)
 SA="cloud-run-intellidial@intellidial-39ca7.iam.gserviceaccount.com"
-for name in eleven-labs-api-key google-sheets-service-account-json next-public-app-url hubspot-client-id hubspot-client-secret hubspot-redirect-uri integration-encryption-key next-public-calendly-url; do
+for name in eleven-labs-api-key google-sheets-service-account-json next-public-app-url hubspot-client-id hubspot-client-secret hubspot-redirect-uri integration-encryption-key next-public-calendly-url resend-webhook-secret; do
   gcloud secrets add-iam-policy-binding $name \
     --member="serviceAccount:${SA}" \
     --role="roles/secretmanager.secretAccessor"
@@ -80,10 +84,11 @@ gcloud config set project intellidial-39ca7
 "https://intellidial.co.za/dashboard/integrations?hubspot_connected=true" | gcloud secrets create hubspot-redirect-uri --data-file=-
 "YOUR_64_CHAR_HEX_ENCRYPTION_KEY" | gcloud secrets create integration-encryption-key --data-file=-
 "https://calendly.com/growth-intellidial/30min" | gcloud secrets create next-public-calendly-url --data-file=-
+"YOUR_RESEND_WEBHOOK_SECRET" | gcloud secrets create resend-webhook-secret --data-file=-
 
 # Grant Cloud Run service account access (PowerShell loop)
 $SA = "cloud-run-intellidial@intellidial-39ca7.iam.gserviceaccount.com"
-@("eleven-labs-api-key", "google-sheets-service-account-json", "next-public-app-url", "hubspot-client-id", "hubspot-client-secret", "hubspot-redirect-uri", "integration-encryption-key", "next-public-calendly-url") | ForEach-Object {
+@("eleven-labs-api-key", "google-sheets-service-account-json", "next-public-app-url", "hubspot-client-id", "hubspot-client-secret", "hubspot-redirect-uri", "integration-encryption-key", "next-public-calendly-url", "resend-webhook-secret") | ForEach-Object {
   gcloud secrets add-iam-policy-binding $_ --member="serviceAccount:$SA" --role="roles/secretmanager.secretAccessor"
 }
 ```
@@ -101,7 +106,7 @@ PowerShell: `"NEW_VALUE" | gcloud secrets versions add SECRET_NAME --data-file=-
 ## 3. cloudbuild.yaml
 
 - **Build step:** Only the 6 `NEXT_PUBLIC_FIREBASE_*` values are passed as Docker build args (currently hardcoded in `cloudbuild.yaml`). They must match your Firebase project.
-- **Deploy step:** All 15 secrets are mapped with `--set-secrets` so Cloud Run injects them as env vars at runtime.
+- **Deploy step:** All 20 secrets are mapped with `--set-secrets` so Cloud Run injects them as env vars at runtime.
 
 When you add a new env var that must be a secret:
 

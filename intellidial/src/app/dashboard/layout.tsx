@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { LayoutDashboard, FolderOpen, Users, Settings, Building2, Bell, Plug } from "lucide-react";
+import { LayoutDashboard, FolderOpen, Users, Settings, Building2, Bell, Plug, Car } from "lucide-react";
 import { DashboardGuard } from "./DashboardGuard";
 import { UserMenu } from "./UserMenu";
 import { UsageWidget } from "./UsageWidget";
@@ -87,6 +87,13 @@ function DashboardLayoutContent({ children }: { children: React.ReactNode }) {
           >
             <FolderOpen className="h-5 w-5 text-slate-500" />
             Projects
+          </Link>
+          <Link
+            href="/dashboard/dealers"
+            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700"
+          >
+            <Car className="h-5 w-5 text-slate-500" />
+            Dealers
           </Link>
           <Link
             href="/dashboard/team"

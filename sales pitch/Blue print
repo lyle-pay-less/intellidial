@@ -1,0 +1,388 @@
+Intellidial – Customer Blueprint & Sales Pitch
+
+---
+
+## 1. What Intellidial is
+
+Intellidial is an **AI-powered phone research and outreach platform**.  
+It automatically calls businesses or contact lists on your behalf, holds natural voice conversations, and then delivers **structured, searchable data, transcripts, and recordings** back into a simple dashboard.
+
+Instead of hiring and managing a large team of callers, Intellidial gives you a **digital calling team** that:
+
+- Dials phone numbers at scale
+- Follows your custom script and questions
+- Captures answers in a consistent format
+- Stores all results (transcripts, audio, data) in one place
+
+Think of it as a **research assistant and call center in one product**, focused on **high-volume, data‑driven phone calls**.
+
+---
+
+## 2. Who it’s for
+
+Intellidial is designed for organizations that need to **speak to lots of businesses or people, collect information, and make decisions quickly**, for example:
+
+- **Sales & lead generation teams** – qualifying leads, updating contact details, checking decision makers, gathering basic needs.
+- **Market research & insights teams** – price checks, competitor analysis, product feedback, mystery shopping.
+- **Operations & customer success** – updating records, confirming details, renewals, follow‑ups.
+- **Healthcare, HR, property, and financial services** – verifying information with clinics, practices, landlords, employers, or clients.
+
+If your work involves **hundreds or thousands of calls per month**, Intellidial is built for you.
+
+---
+
+## 3. What problems it solves
+
+- **Manual calling is slow and expensive**  
+  Hiring, training, and managing callers is costly. Performance varies by person, and it’s hard to scale up or down quickly.
+
+- **Inconsistent data and notes**  
+  Every caller writes notes differently. Spreadsheets are messy, and it’s difficult to trust the data.
+
+- **Limited visibility**  
+  Managers can’t easily see which calls happened, what was said, or how many contacts were actually reached.
+
+- **Missed opportunities**  
+  Teams don’t have the time or capacity to call every lead, so good opportunities fall through the cracks.
+
+Intellidial replaces this with **consistent, automated calls**, structured data capture, and **full visibility** via dashboards and exports.
+
+---
+
+## 4. What Intellidial does (feature overview)
+
+- **AI voice calls at scale**
+  - Dial contacts directly from Intellidial using an AI voice agent.
+  - Natural, human‑like conversations (greetings, clarifying questions, endings).
+
+- **Projects & campaigns**
+  - Create projects for specific research or sales campaigns.
+  - Define your **questions and capture fields** (e.g. “Current provider”, “Price”, “Decision maker name”, “Next step”).
+
+- **Contact management**
+  - Import contacts via CSV, paste numbers, or add them manually.
+  - Organize contacts by project, track status (not called, calling, completed, failed).
+
+- **Call results & analytics**
+  - See call status, outcome, structured data, and failure reasons.
+  - View **full transcripts** and **audio recordings**.
+  - Export results to CSV for analysis or sharing.
+
+- **Team & access control**
+  - Invite team members, assign roles (Owner/Admin/Operator/Viewer).
+  - Keep data separated by **organization**, so multiple clients or brands can live in one system.
+
+- **Integrations (current & planned)**
+  - **HubSpot CRM (deep integration)** – Import contacts by **Lead Status** or by **HubSpot list** (same segments you use in HubSpot). Call results sync back automatically: Lead Status, timeline note (“Intellidial Call”), recording URL, custom properties, and sync status. We respect HubSpot as source of truth: if you mark a contact “Do not call” in HubSpot, we skip them. Optional **trigger from HubSpot**: use a workflow to add contacts to your call queue when they enter a list or Lead Status changes. Full reporting in HubSpot using the properties we write.
+  - Google Sheets and CSV export for analysis and other tools.
+
+---
+
+## 5. How it works – high‑level flow
+
+From a customer’s perspective, a typical flow looks like this:
+
+1. **Onboarding & setup**
+   - We set up your organization in Intellidial.
+   - You get secure login access to your dashboard.
+
+2. **Define your project**
+   - Create a new project (e.g. “Price survey – Cape Town gyms”, “Lead qualification – Apollo SaaS companies”).
+   - Configure the questions and data fields you want to capture (e.g. “Current monthly spend”, “Contract end date”).
+   - Provide your **AI agent instructions** (tone, objectives, disallowed topics).
+
+3. **Import contacts**
+   - Upload a CSV, paste numbers, or **import directly from HubSpot** (by Lead Status or by choosing a HubSpot list). If you already live in HubSpot, you don’t rebuild lists—you pull what you have.
+   - Clean or enrich data using your existing tools if needed (we can guide you).
+
+4. **Run calls**
+   - Start calls directly from the project dashboard.
+   - Intellidial’s AI agent dials contacts, speaks with them, and captures answers.
+
+5. **Review results**
+   - See which calls completed, failed, or need attention.
+   - Read transcripts, listen to recordings, and review structured outputs.
+
+6. **Export & act**
+   - Export to CSV or **see results in HubSpot** (Lead Status, notes, recording link, and custom properties on each contact). Build reports in HubSpot from the data we sync.
+   - Use the data for decisions: pricing, outreach, follow‑ups, reporting.
+
+---
+
+## 6. Key benefits (why customers buy this)
+
+- **Scale without hiring**  
+  Run campaigns that would normally require a full team of callers, with a small core team managing strategy instead of manual calls.
+
+- **Consistent, high‑quality data**  
+  Every call follows the same script and data capture format, making results easy to compare and analyze.
+
+- **Speed to insight**  
+  Instead of waiting weeks for manual calling, you can move from **list → calls → insights** in days.
+
+- **Full transparency**  
+  Every call is recorded and transcribed. You can audit conversations, coach the AI, and build trust in the data.
+
+- **Flexible campaigns**  
+  Run short, targeted projects (e.g. “50 phone calls this week”) or long‑running programs.
+
+- **South African‑friendly setup**  
+  Designed with South African businesses and regulations in mind, including local pricing, phone numbers, and payment options (roadmap).
+
+- **HubSpot as single source of truth (for HubSpot users)**  
+  Import by list or Lead Status, sync results back to the contact record and timeline, and respect “do not call” in HubSpot. Optional workflow trigger adds contacts to the queue automatically—fully “set it and forget it” for the right playbooks.
+
+---
+
+## 7. What makes Intellidial unique
+
+- **Purpose‑built for phone research and outreach**  
+  Not a generic chatbot, not just a telephony API. Intellidial is focused on **structured outcomes from phone calls**.
+
+- **End‑to‑end workflow in one place**  
+  From uploading contacts to exporting results, everything happens in a single platform.
+
+- **Data‑first design**  
+  Call results are mapped into clear fields (e.g. “Price”, “Contact name”, “Outcome”), not just raw transcripts.
+
+- **Production‑ready infrastructure**  
+  Built with modern architecture (Next.js, Firestore, VAPI, Gemini) and deployed to Google Cloud Run for reliability and scalability.
+
+- **Rapid iteration with you**  
+  We are still in an early but production‑ready phase, which means we can move fast to shape the product around your specific use case.
+
+---
+
+## 8. How long it takes to implement / set up
+
+Implementation is intentionally light:
+
+- **Initial setup**: Typically **1–2 working days** to:
+  - Create your organization and user accounts
+  - Align on your first project and capture fields
+  - Configure your AI agent instructions
+
+- **First campaign live**: Usually **within 1 week**, including:
+  - Preparing and cleaning your contact list
+  - Setting expectations and success metrics
+  - Running the first batch of calls and reviewing results together
+
+For more complex integrations or multi‑team rollouts, we will plan a phased approach, but the **core product is usable very quickly**.
+
+---
+
+## 9. How we train your users
+
+- **Kickoff workshop (online)**
+  - 60–90 minute live session.
+  - We walk through: creating projects, importing contacts, starting calls, reading results, and exporting data.
+
+- **Role‑based training**
+  - **Admins**: Organization setup, projects, integrations, usage limits.
+  - **Operators/Analysts**: Running campaigns, monitoring calls, exporting data.
+  - **Viewers**: Reading dashboards and reports.
+
+- **Self‑service materials**
+  - Step‑by‑step guides (screenshots and videos).
+  - Best‑practice checklists for building scripts and capture fields.
+
+- **Ongoing support**
+  - We help you iterate scripts and capture fields after the first campaign based on real call examples.
+
+---
+
+## 10. Support – what you can expect
+
+- **Channels**
+  - Email support.
+  - Optionally, WhatsApp and scheduled calls for higher tiers.
+
+- **Response times**
+  - Business‑hours responses for standard plans.
+  - Faster SLAs can be discussed for larger customers.
+
+- **What we help with**
+  - Technical issues (login, imports, exports).
+  - Campaign design (questions, scripts).
+  - Results interpretation and next‑step suggestions.
+
+Our goal is to feel like an **extension of your team**, not just a software vendor.
+
+---
+
+## 11. Pricing (high‑level structure)
+
+Exact pricing can be customized per customer and market, but the general model is:
+
+- **Platform access**
+  - A base subscription for organization access, users, and projects.
+
+- **Usage‑based calling**
+  - A price per completed call or per minute, with volume‑based discounts.
+
+- **Optional services**
+  - List building and cleaning support.
+  - Custom integrations or reports.
+  - Dedicated success manager for high‑volume clients.
+
+We will provide a clear proposal with:
+
+- Estimated number of calls
+- Expected timeline
+- Total cost and cost per insight/lead
+
+---
+
+## 12. When you can start
+
+If your environment and scope are clear, you can typically **start a pilot within 1 week**:
+
+1. Confirm scope and objectives.
+2. Prepare or agree on a contact list.
+3. Finalize questions and success criteria.
+4. Sign a simple agreement (or pilot SOW).
+5. Kick off the pilot project in Intellidial and begin calling.
+
+---
+
+## 13. Trials and pilots
+
+- **Pilot projects**
+  - We usually recommend a **paid pilot** with a clear start and end.
+  - Example: 200–500 calls over 2–4 weeks for a focused use case.
+
+- **Why a pilot?**
+  - Fast validation of value.
+  - Opportunity to refine questions and flows.
+  - Real data to take to your leadership team.
+
+Free trials can be discussed case‑by‑case, but the standard approach is a **structured, results‑driven pilot**.
+
+---
+
+## 14. Phone number and caller identity
+
+- **Outbound phone number**
+  - Calls will originate from a dedicated business number.
+  - For South African customers, this will be a local number (e.g. +27…).
+
+- **Branding and introduction**
+  - The AI agent introduces itself on behalf of your company or team.
+  - We customize the opening line (e.g. “I’m calling from [Your Company] about…”).
+
+- **Future options (roadmap)**
+  - Bring‑Your‑Own‑Number (e.g. existing call center or Twilio number).
+  - Dedicated numbers per campaign or per customer segment.
+
+---
+
+## 15. Data security, privacy, and compliance
+
+Customers commonly ask:
+
+> Where is my data stored? Is it secure? Who can see my recordings?
+
+- **Data storage**
+  - Core data is stored in **Google Cloud** (Firestore and Cloud Storage).
+  - Access is restricted by organization; tenants are separated logically.
+
+- **Access control**
+  - Only users you invite to your organization can see your projects and results.
+  - Roles control who can edit projects vs. who can only view.
+
+- **Recordings and transcripts**
+  - Used to power your dashboards, exports, and quality review.
+  - Not shared with other customers.
+
+- **Compliance and consent**
+  - We work with you to ensure your script includes **proper disclosures and consent** (“This call may be recorded for quality and training…”).
+  - You remain the data controller for your contact lists; Intellidial is the processor.
+
+We can share more detailed architecture and security documentation on request.
+
+---
+
+## 16. Integrations and compatibility
+
+- **HubSpot CRM (deep integration)**
+  - **Import:** Pull contacts by Lead Status or by **HubSpot list**—no mental translation; “who to call” = “everyone in this list.”
+  - **Sync back:** Lead Status, a clear “Intellidial Call” note on the contact timeline, recording URL, call activity (last call date, duration, count), custom property mapping, and sync status so you can report in HubSpot.
+  - **Two-way:** We check HubSpot before calling. If a contact’s Lead Status is in your “do not call” list (e.g. Do not call, Not contacted), we skip them—you manage who to call in HubSpot; Intellidial follows.
+  - **Trigger from HubSpot (optional):** Use a HubSpot workflow (“contact added to list” or “Lead Status changed”) to send a webhook and add that contact to an Intellidial project’s call queue automatically.
+  - **Reporting:** Build HubSpot reports and lists using the properties we write (sync status, last call date, duration, call count, recording URL).
+  - One OAuth connection per organization; optional use of your own HubSpot app credentials.
+
+- **Exports**
+  - CSV export for use in Excel, Google Sheets, BI tools, and your own systems.
+
+- **Other tools**
+  - You can combine Intellidial results with tools like Apollo, LinkedIn, or internal databases to enrich or segment your data.
+
+If you have a specific system in mind, we can discuss workflows and possible integrations during the pilot.
+
+---
+
+## 17. Common customer questions (FAQ)
+
+**Q: What if my contacts have different accents or languages?**  
+A: The AI model is built to handle a range of accents and speaking speeds. We can tune scripts and instructions for your specific region and test on a small sample first.
+
+**Q: What happens if the person asks a question the AI can’t answer?**  
+A: The agent is instructed to gracefully acknowledge limits, capture the question, and (where appropriate) offer that a human will follow up. You can see these cases in transcripts and route them to your team.
+
+**Q: Can we change the script after the campaign starts?**  
+A: Yes. You can update questions and instructions between batches of calls. For running campaigns, we recommend versioning changes so results remain comparable.
+
+**Q: What if a call fails or the number is wrong?**  
+A: Intellidial tracks failed calls and reasons where available (e.g. unreachable, invalid number, call dropped). You can filter these and decide whether to retry, clean the list, or ignore them.
+
+**Q: Who owns the data?**  
+A: You own your lists, call logs, transcripts, and captured data. Intellidial provides the tooling and infrastructure to run and manage the calls.
+
+**Q: How many calls can we run?**  
+A: Capacity scales with your plan and infrastructure, but the system is designed for **high‑volume calling**. We will agree on a safe initial volume and ramp up once we see stable performance.
+
+**Q: Can we use this for inbound calls as well?**  
+A: The primary focus is outbound research and outreach. Inbound is technically possible (roadmap), and we can discuss if this is a must‑have for your use case.
+
+**Q: How do we cancel or pause?**  
+A: You can pause campaigns at any time. Subscription and usage terms will be clearly defined in your agreement; we aim for **transparent, no‑surprise billing**.
+
+**Q: Does this replace our sales team or research team?**  
+A: Intellidial is a **force multiplier**, not a full replacement. It handles repetitive, structured calls at scale so your human team can focus on relationships, complex conversations, and decision‑making.
+
+**Q: We use HubSpot. How does Intellidial fit in?**  
+A: We built a **deep HubSpot integration**. You import contacts by Lead Status or by HubSpot list (same segments you already use). After each call we update the contact in HubSpot—Lead Status, a note on the timeline (“Intellidial Call”), recording link, and any custom properties you map. We also respect HubSpot: if you mark someone “Do not call” there, we won’t call them. Optional: trigger from a HubSpot workflow to add contacts to your call queue when they enter a list or their status changes. You stay in HubSpot; Intellidial does the calling.
+
+---
+
+## 18. How to evaluate Intellidial in your business
+
+When considering Intellidial, most customers look at:
+
+- **Volume** – How many calls per month do we realistically need?
+- **Value per insight or lead** – What is a qualified lead or verified data point worth to us?
+- **Time‑to‑insight** – How quickly do we need answers?
+- **Team constraints** – Could our current team realistically do this manually?
+
+A short, well‑designed pilot typically gives clear answers on:
+
+- Data quality and accuracy
+- Conversion or completion rates
+- Realistic cost per completed call or insight
+- Whether Intellidial should become a core part of your workflow
+
+---
+
+## 19. Next steps
+
+If you’re interested in Intellidial, the next steps are simple:
+
+1. Share your **use case** and **target segment** (who you want to call and why).
+2. We help you design a **first project** with clear capture fields and success metrics.
+3. Agree on a **pilot scope, timeline, and price**.
+4. Run the pilot, review results together, and decide on ongoing rollout.
+
+This blueprint is designed to answer the majority of customer questions.  
+If anything is unclear or you have a scenario we haven’t covered, we will include it in future iterations and keep this document as your **living Intellidial knowledge base**.
+

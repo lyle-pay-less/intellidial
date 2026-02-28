@@ -92,3 +92,69 @@ export async function generateTextFromUrl(
     return { ok: false, error: raw || "Request failed." };
   }
 }
+
+export type ExtractFullTextFromHtmlResult =
+  | { ok: true; text: string }
+  | { ok: false; error: string; code?: "API_KEY_INVALID" };
+
+const VEHICLE_LISTING_FULL_TEXT_INSTRUCTION = `You are given the HTML of a vehicle listing page (e.g. AutoTrader, Cars.co.za, or a dealer site).
+
+Output the complete text content of this page. Preserve every piece of information. You MUST include:
+- Make, model, year, variant
+- Price and any pricing notes
+- Mileage, fuel type, transmission
+- Full description and seller notes
+- ALL specification sections. Do not skip or summarise any of these:
+  - General (e.g. body type, doors, seats)
+  - Engine (e.g. capacity, power, torque, fuel type)
+  - Handling (e.g. front tyres, rear tyres, power steering, stability control, traction control, cruise control, lane departure)
+  - Safety (e.g. airbag quantity, ABS, brake assist, any safety features listed)
+  - Comfort, Technology, and any other spec categories on the page
+- Any disclaimers, contact details, or other text on the listing
+
+Do not summarise or omit anything. The output will be used by a phone agent to answer questions about handling, safety, specs, and everything else. Output only the extracted text, no headings or labels.`;
+
+/**
+ * Extract full text from vehicle listing HTML using Gemini. No summarisation — agent gets full context.
+ */
+export async function extractFullTextFromHtml(html: string): Promise<ExtractFullTextFromHtmlResult> {
+  const ai = getClient();
+  if (!ai) return { ok: false, error: "Gemini is not configured.", code: "API_KEY_INVALID" };
+  // Truncate very large HTML to stay within model context (e.g. 500k chars ~= ~125k tokens)
+  const maxChars = 450_000;
+  const content = html.length > maxChars ? html.slice(0, maxChars) + "\n\n[... content truncated ...]" : html;
+  const prompt = `${VEHICLE_LISTING_FULL_TEXT_INSTRUCTION}\n\n--- HTML ---\n${content}`;
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        // Default is 8192; long listings (all specs) can exceed that and get cut off — Handling/Safety often at end
+        maxOutputTokens: 32768,
+      },
+    });
+    const text = (response as { text?: string })?.text;
+    if (typeof text === "string" && text.trim()) {
+      return { ok: true, text: text.trim() };
+    }
+    return { ok: false, error: "No content generated." };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    const str = typeof e === "object" && e ? JSON.stringify(e).concat(raw) : raw;
+    const is403 =
+      raw.includes("403") ||
+      raw.includes("PERMISSION_DENIED") ||
+      str.includes("leaked") ||
+      str.includes("API key") ||
+      str.includes("api key");
+    console.warn("[Gemini] extractFullTextFromHtml failed:", raw);
+    if (is403) {
+      return {
+        ok: false,
+        error: "Your Gemini API key was revoked or is invalid. Create a new key and set GEMINI_API_KEY.",
+        code: "API_KEY_INVALID",
+      };
+    }
+    return { ok: false, error: raw || "Request failed." };
+  }
+}

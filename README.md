@@ -10,8 +10,9 @@ AI-powered phone research platform: call businesses with voice AI, get structure
 
 | Path | Description |
 |------|-------------|
-| **`intellidial/`** | Next.js app: marketing site, live voice demo, and back office (dashboard, projects, contacts, team, settings). Production-ready with Firebase Auth, Firestore, VAPI integration, and Cloud Run deployment. |
+| **`intellidial/`** | Next.js app: marketing site, live voice demo, dealer page (`/dealers`), and back office (dashboard, projects, contacts, team, settings). Production-ready with Firebase Auth, Firestore, VAPI integration, and Cloud Run deployment. |
 | **`intellidial/docs/`** | Documentation: completion roadmap, backlog items, integration plans, setup guides. |
+| **`dealer_outreach/`** | Dealer campaign: cold email drafts, [HOMEPAGE_AND_DEALER_PAGE_TODO.md](dealer_outreach/HOMEPAGE_AND_DEALER_PAGE_TODO.md) (dealer campaign status — what’s done; optional homepage tweak), [OUTREACH_CONTEXT.md](dealer_outreach/cold_email/OUTREACH_CONTEXT.md) (how to use the folder, warmup, dealer page URL). |
 | **`cloudbuild.yaml`** | Google Cloud Build configuration for CI/CD deployment to Cloud Run. |
 | **`leads_gen/`** | Lead generation scripts and documentation (separate tooling). |
 | **`production_plan/`** | Business planning and MVP documentation. |
@@ -32,7 +33,8 @@ AI-powered phone research platform: call businesses with voice AI, get structure
 - **Email Notifications** - Resend integration for team invitations
 - **HubSpot Integration** - OAuth-based CRM sync (contacts, properties)
 - **Usage Limits** - Per-organization call limits with enforcement
-- **Voice Demo** - Live AI voice widget on landing page
+- **Voice Demo** - Live AI voice widget on landing page and dealer page (dealer-specific context on `/dealers`)
+- **Dealer campaign page** - `/dealers` live at intellidial.co.za/dealers (hero, 3 steps, CTA, dealer voice demo)
 
 ### 🚧 In Progress / Planned
 

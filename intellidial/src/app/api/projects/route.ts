@@ -11,7 +11,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
   await ensureDemoDataForOrg(orgId);
-  const projectsList = await listProjects(orgId);
+  const { searchParams } = new URL(req.url);
+  const dealerOnly = searchParams.get("dealerOnly") === "true";
+  const projectsList = await listProjects(orgId, { dealerOnly });
   return NextResponse.json(projectsList);
 }
 
@@ -32,11 +34,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  const description = typeof body?.description === 'string' ? body.description.trim() : undefined;
+  const description = typeof body?.description === "string" ? body.description.trim() : undefined;
+  const isDealerProject = body?.isDealerProject === true;
   const project = await createProject({
     name: name.trim(),
     description,
     orgId,
+    isDealerProject,
   });
   return NextResponse.json(project);
 }
