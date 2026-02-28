@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
       transcript: artifact?.transcript ?? undefined,
       recordingUrl,
       attemptedAt,
+      endedReason: endedReason || undefined,
       ...(capturedData ? { capturedData } : {}),
       ...(isFailed ? { failureReason: endedReason || "Call ended" } : {}),
     };

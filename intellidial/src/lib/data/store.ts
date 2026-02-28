@@ -7,6 +7,7 @@
  */
 
 import type { ProjectDoc, ContactDoc, OrganizationDoc, CaptureField, NotificationDoc, HubSpotIntegrationDoc, GoogleSheetsIntegrationDoc, GCPIntegrationDoc, DealerDoc, DealerContextLink } from "@/lib/firebase/types";
+import { isCallAnswered, isCallBooking } from "@/lib/utils/call-stats";
 import { MOCK_PROJECTS, getMockContacts } from "@/lib/firebase/mockData";
 import { getFirebaseAdminFirestore, getFirebaseAdminAuth, isFirebaseAdminConfigured, FieldValue } from "@/lib/firebase/admin";
 import { COLLECTIONS, type HubSpotSyncLogDoc, type HubSpotSyncQueueDoc } from "@/lib/firebase/types";
@@ -293,25 +294,69 @@ export function getDashboardStats(orgId: string, filterProjectIds?: string[]): {
   };
 }
 
-export function getProjectStats(projectId: string): ReturnType<typeof getDashboardStats> {
+export type ProjectStatsExtended = ReturnType<typeof getDashboardStats> & {
+  answeredCalls: number;
+  answerRate: number;
+  bookingsCount: number;
+  enquiryToCallAvgSeconds: number | null;
+  enquiryToCallMinSeconds: number | null;
+  enquiryToCallMaxSeconds: number | null;
+  avgDurationSeconds: number | null;
+  maxDurationSeconds: number | null;
+  minDurationSeconds: number | null;
+};
+
+export function getProjectStats(projectId: string): ProjectStatsExtended {
   const ids = projectContacts.get(projectId) ?? [];
   let contactsUploaded = ids.length;
   let callsMade = 0;
   let successfulCalls = 0;
   let unsuccessfulCalls = 0;
   let totalSeconds = 0;
+  let answeredCalls = 0;
+  let bookingsCount = 0;
+  const enquiryToCallSeconds: number[] = [];
+  const durationSecondsList: number[] = [];
+
   for (const cid of ids) {
     const c = contacts.get(cid);
     if (!c) continue;
-    if (c.callResult) {
-      callsMade++;
-      if (c.status === "success") successfulCalls++;
-      else if (c.status === "failed") unsuccessfulCalls++;
-      totalSeconds += c.callResult.durationSeconds ?? 0;
+    const entry = c.callResult ?? c.callHistory?.at(-1);
+    if (!entry?.attemptedAt) continue;
+    callsMade++;
+    if (c.status === "success") successfulCalls++;
+    else if (c.status === "failed") unsuccessfulCalls++;
+    const dur = entry.durationSeconds ?? 0;
+    totalSeconds += dur;
+    if (dur > 0) durationSecondsList.push(dur);
+    if (isCallAnswered(entry)) answeredCalls++;
+    if (isCallBooking(entry.capturedData)) bookingsCount++;
+    if (c.createdAt && entry.attemptedAt) {
+      const ms = new Date(entry.attemptedAt).getTime() - new Date(c.createdAt).getTime();
+      if (ms >= 0) enquiryToCallSeconds.push(Math.round(ms / 1000));
     }
   }
+
   const hoursOnCalls = Math.round((totalSeconds / 3600) * 100) / 100;
   const successRate = callsMade > 0 ? Math.round((successfulCalls / callsMade) * 100) : 0;
+  const answerRate = callsMade > 0 ? Math.round((answeredCalls / callsMade) * 100) : 0;
+
+  const enquiryToCallAvgSeconds =
+    enquiryToCallSeconds.length > 0
+      ? Math.round(enquiryToCallSeconds.reduce((a, b) => a + b, 0) / enquiryToCallSeconds.length)
+      : null;
+  const enquiryToCallMinSeconds =
+    enquiryToCallSeconds.length > 0 ? Math.min(...enquiryToCallSeconds) : null;
+  const enquiryToCallMaxSeconds =
+    enquiryToCallSeconds.length > 0 ? Math.max(...enquiryToCallSeconds) : null;
+
+  const avgDurationSeconds =
+    durationSecondsList.length > 0
+      ? Math.round(durationSecondsList.reduce((a, b) => a + b, 0) / durationSecondsList.length)
+      : null;
+  const maxDurationSeconds = durationSecondsList.length > 0 ? Math.max(...durationSecondsList) : null;
+  const minDurationSeconds = durationSecondsList.length > 0 ? Math.min(...durationSecondsList) : null;
+
   return {
     contactsUploaded,
     callsMade,
@@ -319,20 +364,31 @@ export function getProjectStats(projectId: string): ReturnType<typeof getDashboa
     unsuccessfulCalls,
     hoursOnCalls,
     successRate,
+    answeredCalls,
+    answerRate,
+    bookingsCount,
+    enquiryToCallAvgSeconds,
+    enquiryToCallMinSeconds,
+    enquiryToCallMaxSeconds,
+    avgDurationSeconds,
+    maxDurationSeconds,
+    minDurationSeconds,
   };
 }
 
-function getProjectCallsByDay(projectId: string): Array<{ date: string; calls: number; successful: number; failed: number }> {
-  const byDay = new Map<string, { calls: number; successful: number; failed: number }>();
+function getProjectCallsByDay(projectId: string): Array<{ date: string; calls: number; successful: number; failed: number; bookings: number }> {
+  const byDay = new Map<string, { calls: number; successful: number; failed: number; bookings: number }>();
   const ids = projectContacts.get(projectId) ?? [];
   for (const cid of ids) {
     const c = contacts.get(cid);
-    if (!c?.callResult?.attemptedAt) continue;
-    const date = c.callResult.attemptedAt.slice(0, 10);
-    const current = byDay.get(date) ?? { calls: 0, successful: 0, failed: 0 };
+    const entry = c?.callResult ?? c?.callHistory?.at(-1);
+    if (!entry?.attemptedAt) continue;
+    const date = entry.attemptedAt.slice(0, 10);
+    const current = byDay.get(date) ?? { calls: 0, successful: 0, failed: 0, bookings: 0 };
     current.calls++;
-    if (c.status === "success") current.successful++;
-    else if (c.status === "failed") current.failed++;
+    if (c?.status === "success") current.successful++;
+    else if (c?.status === "failed") current.failed++;
+    if (isCallBooking(entry.capturedData)) current.bookings++;
     byDay.set(date, current);
   }
   return Array.from(byDay.entries())
@@ -355,12 +411,12 @@ function getProjectMinutesByDay(projectId: string): Array<{ date: string; minute
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function getProjectCallsByDayForChart(projectId: string): ReturnType<typeof getCallsByDayForChart> {
+export function getProjectCallsByDayForChart(projectId: string): Array<{ date: string; label: string; calls: number; successful: number; failed: number; bookings: number }> {
   const raw = getProjectCallsByDay(projectId);
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const result: Array<{ date: string; label: string; calls: number; successful: number; failed: number }> = [];
+  const result: Array<{ date: string; label: string; calls: number; successful: number; failed: number; bookings: number }> = [];
   const lastDay = new Date(year, month + 1, 0).getDate();
   for (let day = 1; day <= lastDay; day++) {
     const d = new Date(year, month, day);
@@ -374,6 +430,7 @@ export function getProjectCallsByDayForChart(projectId: string): ReturnType<type
       calls: existing?.calls ?? 0,
       successful: existing?.successful ?? 0,
       failed: existing?.failed ?? 0,
+      bookings: existing?.bookings ?? 0,
     });
   }
   return result;
@@ -1120,6 +1177,7 @@ async function hydrateProjectContacts(projectId: string): Promise<void> {
         callHistory: (d.callHistory as ContactWithId["callHistory"]) ?? null,
         lastVapiCallId: (d.lastVapiCallId as string | null) ?? null,
         vapiCallId: (d.vapiCallId as string | null) ?? null,
+        email: (d.email as string | null) ?? null,
         hubspotContactId: (d.hubspotContactId as string | null) ?? null,
         hubspotLeadStatus: (d.hubspotLeadStatus as string | null) ?? null,
         lastSyncedToHubSpot: (d.lastSyncedToHubSpot as string | null) ?? null,
@@ -1208,7 +1266,8 @@ export async function updateContact(
 
 export async function createContacts(
   projectId: string,
-  items: Array<{ phone: string; name?: string; hubspotContactId?: string; hubspotLeadStatus?: string }>
+  items: Array<{ phone: string; name?: string; email?: string; hubspotContactId?: string; hubspotLeadStatus?: string }>,
+  opts?: { skipDuplicates?: boolean }
 ): Promise<ContactWithId[]> {
   const ids = projectContacts.get(projectId) ?? [];
   const t = now();
@@ -1216,11 +1275,43 @@ export async function createContacts(
   const seen = new Set<string>();
 
   const db = isFirebaseAdminConfigured() ? getFirebaseAdminFirestore() : null;
+  const skipDuplicates = opts?.skipDuplicates === true;
 
   for (const item of items) {
-    const phone = item.phone.replace(/\s/g, "");
+    const phone = normalizePhoneForContact(item.phone);
     if (!phone || seen.has(phone)) continue;
     seen.add(phone);
+
+    if (skipDuplicates && db) {
+      const existingSnap = await db
+        .collection(COLLECTIONS.contacts)
+        .where("projectId", "==", projectId)
+        .where("phone", "==", phone)
+        .limit(1)
+        .get();
+      if (!existingSnap.empty) {
+        const doc = existingSnap.docs[0];
+        const existingContact = { id: doc.id, ...doc.data() } as ContactWithId;
+        created.push(existingContact);
+        continue;
+      }
+    } else if (skipDuplicates) {
+      await listContacts(projectId, { limit: 10000 });
+      const existingIds = projectContacts.get(projectId) ?? [];
+      const norm = (p: string) => {
+        let s = p.replace(/\s/g, "");
+        if (s.startsWith("0") && s.length >= 10) s = "+27" + s.slice(1);
+        else if (!s.startsWith("+") && s.length >= 10) s = "+27" + s;
+        return s;
+      };
+      const existingContact = existingIds
+        .map((cid) => contacts.get(cid))
+        .find((c) => c && norm(c.phone) === norm(phone));
+      if (existingContact) {
+        created.push(existingContact);
+        continue;
+      }
+    }
 
     const id = db
       ? db.collection(COLLECTIONS.contacts).doc().id
@@ -1230,6 +1321,7 @@ export async function createContacts(
       projectId,
       phone,
       name: item.name ?? null,
+      email: item.email ?? null,
       status: "pending",
       hubspotContactId: item.hubspotContactId ?? null,
       hubspotLeadStatus: item.hubspotLeadStatus ?? null,
@@ -1250,6 +1342,13 @@ export async function createContacts(
   }
   projectContacts.set(projectId, ids);
   return created;
+}
+
+function normalizePhoneForContact(raw: string): string {
+  let s = raw.replace(/\s/g, "").trim();
+  if (s.startsWith("0") && s.length >= 10) s = "+27" + s.slice(1);
+  else if (!s.startsWith("+") && s.length >= 10) s = "+27" + s;
+  return s;
 }
 
 const MOCK_TRANSCRIPTS = [

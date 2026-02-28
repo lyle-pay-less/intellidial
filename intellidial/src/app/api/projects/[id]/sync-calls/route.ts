@@ -242,6 +242,7 @@ export async function GET(
       transcript: call.artifact?.transcript ?? undefined,
       recordingUrl: getRecordingUrl(call.artifact?.recording),
       attemptedAt,
+      endedReason: call.endedReason ?? undefined,
       ...(capturedData ? { capturedData } : {}),
       ...(failureReason ? { failureReason } : {}),
     };
@@ -363,12 +364,14 @@ export async function GET(
       ) ?? contact.callResult?.capturedData;
     const attemptedAt =
       call.endedAt ?? call.startedAt ?? contact.callResult?.attemptedAt ?? new Date().toISOString();
+    const endedReason = call.endedReason ?? contact.callResult?.endedReason;
     const callResult = {
       ...contact.callResult,
       durationSeconds: durationSeconds || contact.callResult?.durationSeconds,
       recordingUrl: recordingUrl || contact.callResult?.recordingUrl,
       transcript: transcript ?? contact.callResult?.transcript,
       attemptedAt,
+      endedReason: endedReason ?? undefined,
       ...(capturedData ? { capturedData } : {}),
     };
     // Results table reads from callHistory; update the matching entry so the UI shows recording

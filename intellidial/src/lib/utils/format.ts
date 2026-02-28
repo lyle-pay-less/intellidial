@@ -11,3 +11,12 @@ export function formatDuration(hours: number): string {
   if (m === 0) return `${h}h`;
   return `${h}h ${m}m`;
 }
+
+/** Format seconds as human-readable (e.g. enquiry-to-call time). */
+export function formatSeconds(seconds: number): string {
+  if (seconds < 60) return `${seconds} sec`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (secs === 0) return `${mins} min`;
+  return `${mins}m ${secs}s`;
+}

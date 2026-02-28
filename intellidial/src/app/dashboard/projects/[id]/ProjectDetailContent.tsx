@@ -36,6 +36,9 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  CalendarCheck,
+  PhoneCall,
+  Timer,
 } from "lucide-react";
 import { IntelliDialLoader } from "@/app/components/IntelliDialLoader";
 import { getHubSpotContactUrl, formatTimeAgo } from "@/lib/integrations/hubspot/utils";
@@ -45,14 +48,19 @@ import {
   Cell,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
   LabelList,
+  ComposedChart,
+  Legend,
 } from "recharts";
-import { formatDuration } from "@/lib/utils/format";
+import { formatDuration, formatSeconds } from "@/lib/utils/format";
+import { isCallBooking, getWhyNotBooked } from "@/lib/utils/call-stats";
 import type {
   ProjectDoc,
   ContactDoc,
@@ -358,7 +366,16 @@ function OverviewTab({
     unsuccessfulCalls: number;
     hoursOnCalls: number;
     successRate: number;
-    callsByDay: Array<{ date: string; label: string; calls: number; successful: number; failed: number }>;
+    answeredCalls?: number;
+    answerRate?: number;
+    bookingsCount?: number;
+    enquiryToCallAvgSeconds?: number | null;
+    enquiryToCallMinSeconds?: number | null;
+    enquiryToCallMaxSeconds?: number | null;
+    avgDurationSeconds?: number | null;
+    maxDurationSeconds?: number | null;
+    minDurationSeconds?: number | null;
+    callsByDay: Array<{ date: string; label: string; calls: number; successful: number; failed: number; bookings?: number }>;
     minutesByDay: Array<{ date: string; label: string; minutes: number }>;
   } | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -366,6 +383,8 @@ function OverviewTab({
   const [notifyOnComplete, setNotifyOnComplete] = useState(
     project.notifyOnComplete ?? false
   );
+  const [detailContacts, setDetailContacts] = useState<ContactWithId[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const pendingCount = contacts.filter(
     (c) => c.status === "pending" || c.status === "calling"
@@ -381,6 +400,16 @@ function OverviewTab({
       .then((r) => r.json())
       .then((data) => setStats(data))
       .finally(() => setStatsLoading(false));
+  }, [projectId, authHeaders]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setDetailLoading(true);
+    fetch(`/api/projects/${projectId}/contacts?limit=10000`, { headers: authHeaders })
+      .then((r) => r.json())
+      .then((data) => setDetailContacts(data.contacts ?? []))
+      .catch(() => setDetailContacts([]))
+      .finally(() => setDetailLoading(false));
   }, [projectId, authHeaders]);
 
   // When stats load, delay pie values so chart animates from 0 to final
@@ -446,7 +475,20 @@ function OverviewTab({
         </div>
       ) : stats ? (
         <>
+          {/* Primary KPIs — dealership-focused */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+            <div className="rounded-xl border-2 border-teal-200 bg-gradient-to-br from-teal-50 to-white p-4 shadow-sm">
+              <div className="mb-2"><CalendarCheck className="h-5 w-5 text-teal-600" /></div>
+              <p className="text-2xl font-bold text-teal-700">{stats.bookingsCount ?? 0}</p>
+              <p className="text-sm text-slate-600 font-medium">Bookings</p>
+              <p className="mt-1 text-xs text-slate-500">Test drives / viewings booked</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-2"><PhoneCall className="h-5 w-5 text-slate-500" /></div>
+              <p className="text-2xl font-bold text-slate-900">{stats.answerRate ?? stats.successRate}%</p>
+              <p className="text-sm text-slate-500">Answer rate</p>
+              <p className="mt-1 text-xs text-slate-500">{stats.answeredCalls ?? stats.successfulCalls} of {stats.callsMade} calls answered</p>
+            </div>
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-2"><Users className="h-5 w-5 text-slate-500" /></div>
               <p className="text-2xl font-bold text-slate-900">{stats.contactsUploaded}</p>
@@ -467,41 +509,69 @@ function OverviewTab({
               <p className="text-2xl font-bold text-red-600">{stats.unsuccessfulCalls}</p>
               <p className="text-sm text-slate-500">Unsuccessful</p>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2"><Clock className="h-5 w-5 text-teal-500" /></div>
-              <p className="text-2xl font-bold text-slate-900">{formatDuration(stats.hoursOnCalls)}</p>
-              <p className="text-sm text-slate-500">Time saved</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-2"><DollarSign className="h-5 w-5 text-emerald-600" /></div>
-              <p className="text-2xl font-bold text-slate-900">R{Math.round(stats.hoursOnCalls * HOURLY_RATE).toLocaleString()}</p>
-              <p className="text-sm text-slate-500">Money saved</p>
+          </div>
+
+          {/* Enquiries vs calls — sanity check */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-5">
+            <h3 className="mb-2 text-sm font-semibold text-amber-900">Enquiries vs calls (sanity check)</h3>
+            <div className="flex flex-wrap items-center gap-6">
+              <span className="text-slate-700">
+                <span className="font-bold text-slate-900">{stats.contactsUploaded}</span> enquiries
+              </span>
+              <span className="text-slate-400">→</span>
+              <span className="text-slate-700">
+                <span className="font-bold text-slate-900">{stats.callsMade}</span> calls made
+              </span>
+              <span className="text-slate-500 text-sm">
+                {stats.contactsUploaded > 0
+                  ? stats.callsMade >= stats.contactsUploaded
+                    ? "All enquiries called"
+                    : `${stats.contactsUploaded - stats.callsMade} not yet called`
+                  : "—"}
+              </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {/* Conversion & timing KPIs */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5">
               <p className="text-sm font-medium text-teal-800">
-                Success rate: <span className="font-bold">{stats.successRate}%</span>
+                Conversion rate: <span className="font-bold">{stats.callsMade > 0 ? Math.round(((stats.bookingsCount ?? 0) / stats.callsMade) * 100) : 0}%</span>
               </p>
               <p className="mt-1 text-xs text-teal-600">
+                {(stats.bookingsCount ?? 0)} bookings from {stats.callsMade} calls
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                <Timer className="h-4 w-4 text-slate-500" />
+                Enquiry to call: <span className="font-bold">{stats.enquiryToCallAvgSeconds != null ? formatSeconds(stats.enquiryToCallAvgSeconds) : "—"}</span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Avg: {stats.enquiryToCallAvgSeconds != null ? formatSeconds(stats.enquiryToCallAvgSeconds) : "—"}
+                {stats.enquiryToCallMinSeconds != null && stats.enquiryToCallMaxSeconds != null && (
+                  <> · Min: {formatSeconds(stats.enquiryToCallMinSeconds)} · Max: {formatSeconds(stats.enquiryToCallMaxSeconds)}</>
+                )}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-sm font-medium text-slate-800 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-slate-500" />
+                Call duration: <span className="font-bold">{stats.avgDurationSeconds != null ? formatSeconds(stats.avgDurationSeconds) : "—"}</span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Avg: {stats.avgDurationSeconds != null ? formatSeconds(stats.avgDurationSeconds) : "—"}
+                {stats.minDurationSeconds != null && stats.maxDurationSeconds != null && (
+                  <> · Min: {formatSeconds(stats.minDurationSeconds)} · Max: {formatSeconds(stats.maxDurationSeconds)}</>
+                )}
+              </p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="text-sm font-medium text-slate-800">
+                Success rate: <span className="font-bold">{stats.successRate}%</span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
                 AI handled {formatDuration(stats.hoursOnCalls)} of calls
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5">
-              <p className="text-sm font-medium text-emerald-800">
-                Time saved: <span className="font-bold">{formatDuration(stats.hoursOnCalls)}</span>
-              </p>
-              <p className="mt-1 text-xs text-emerald-600">
-                Equivalent to your team&apos;s time
-              </p>
-            </div>
-            <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-5">
-              <p className="text-sm font-medium text-emerald-800">
-                Money saved: <span className="font-bold">R{Math.round(stats.hoursOnCalls * HOURLY_RATE).toLocaleString()}</span>
-              </p>
-              <p className="mt-1 text-xs text-emerald-600">
-                At R{HOURLY_RATE}/hour labor cost
               </p>
             </div>
           </div>
@@ -572,25 +642,31 @@ function OverviewTab({
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-x-auto">
-            <h3 className="mb-4 font-display text-sm font-semibold text-slate-900">Calls by day</h3>
+            <h3 className="mb-4 font-display text-sm font-semibold text-slate-900">Calls & bookings by day</h3>
             <div className="h-80 min-w-[400px]" style={{ minWidth: Math.max(400, (stats.callsByDay?.length ?? 0) * 36) }}>
               {stats.callsByDay?.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.callsByDay} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <ComposedChart data={stats.callsByDay} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-slate-100" />
                     <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12 }} tickLine={false} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 12 }} tickLine={false} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} tickLine={false} />
                     <Tooltip contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0" }}
-                      formatter={(value: number, name: string) => [value, name === "successful" ? "Successful" : "Failed"]}
+                      formatter={(value: number, name: string) => [
+                        value,
+                        name === "successful" ? "Successful" : name === "failed" ? "Failed" : name === "bookings" ? "Bookings" : name,
+                      ]}
                       labelFormatter={(label) => `Date: ${label}`} />
-                    <Bar dataKey="successful" stackId="a" fill={CHART_COLORS.success} radius={[4, 4, 0, 0]} name="successful">
+                    <Legend />
+                    <Bar yAxisId="left" dataKey="successful" stackId="a" fill={CHART_COLORS.success} radius={[4, 4, 0, 0]} name="Successful">
                       <LabelList dataKey="successful" position="center" fill="white" formatter={(v: number) => (v > 0 ? v : "")} />
                     </Bar>
-                    <Bar dataKey="failed" stackId="a" fill={CHART_COLORS.failed} radius={[0, 0, 4, 4]} name="failed">
+                    <Bar yAxisId="left" dataKey="failed" stackId="a" fill={CHART_COLORS.failed} radius={[0, 0, 4, 4]} name="Failed">
                       <LabelList dataKey="failed" position="center" fill="white" formatter={(v: number) => (v > 0 ? v : "")} />
                       <LabelList dataKey="calls" position="top" formatter={(v: number) => (v > 0 ? v : "")} />
                     </Bar>
-                  </BarChart>
+                    <Line yAxisId="right" type="monotone" dataKey="bookings" stroke="#0d9488" strokeWidth={2} dot={{ r: 4 }} name="Bookings" />
+                  </ComposedChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-slate-400">No call data by day yet</div>
@@ -599,6 +675,87 @@ function OverviewTab({
           </div>
         </>
       ) : null}
+      {/* Full detail table */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <h3 className="mb-4 font-display text-sm font-semibold text-slate-900">Full detail table</h3>
+        {detailLoading ? (
+          <div className="flex min-h-[120px] items-center justify-center">
+            <IntelliDialLoader />
+          </div>
+        ) : detailContacts.length === 0 ? (
+          <p className="text-sm text-slate-500">No contacts yet</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Name</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Phone</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Status</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Created</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Call attempted</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Enquiry→call</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Duration</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Ended reason</th>
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Failure reason</th>
+                  {project.captureFields?.map((f) => (
+                    <th key={f.key} className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">{f.label}</th>
+                  ))}
+                  <th className="whitespace-nowrap px-3 py-2 font-medium text-slate-700">Recording</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailContacts.map((c) => {
+                  const entry = c.callResult ?? c.callHistory?.at(-1);
+                  const enquiryToCallSec =
+                    c.createdAt && entry?.attemptedAt
+                      ? Math.round((new Date(entry.attemptedAt).getTime() - new Date(c.createdAt).getTime()) / 1000)
+                      : null;
+                  return (
+                    <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-3 py-2 text-slate-900">{c.name ?? "—"}</td>
+                      <td className="px-3 py-2 font-mono text-slate-700">{c.phone}</td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-medium ${
+                            c.status === "success" ? "bg-emerald-100 text-emerald-700" :
+                            c.status === "failed" ? "bg-red-100 text-red-700" :
+                            c.status === "calling" ? "bg-amber-100 text-amber-700" :
+                            "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{c.createdAt ? new Date(c.createdAt).toLocaleString() : "—"}</td>
+                      <td className="px-3 py-2 text-slate-600">{entry?.attemptedAt ? new Date(entry.attemptedAt).toLocaleString() : "—"}</td>
+                      <td className="px-3 py-2 text-slate-600">{enquiryToCallSec != null ? formatSeconds(enquiryToCallSec) : "—"}</td>
+                      <td className="px-3 py-2 text-slate-600">{entry?.durationSeconds != null ? formatSeconds(entry.durationSeconds) : "—"}</td>
+                      <td className="px-3 py-2 text-slate-600">{entry?.endedReason ?? "—"}</td>
+                      <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={entry?.failureReason ?? ""}>{entry?.failureReason ?? "—"}</td>
+                      {project.captureFields?.map((f) => (
+                        <td key={f.key} className="px-3 py-2 text-slate-600 max-w-[150px] truncate" title={String(entry?.capturedData?.[f.key] ?? "—")}>
+                          {String(entry?.capturedData?.[f.key] ?? "—")}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2">
+                        {entry?.recordingUrl ? (
+                          <a href={entry.recordingUrl} target="_blank" rel="noopener noreferrer" className="text-teal-600 hover:underline">
+                            Listen
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex cursor-pointer items-center gap-3">
           <input
@@ -1033,11 +1190,39 @@ function ContactsTab({
     }
   };
 
+  const displayName = (raw: string | null | undefined): string => {
+    if (!raw?.trim()) return "—";
+    let s = raw.trim();
+    const urlIdx = s.search(/https?:\/\//i);
+    if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+    const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+    if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+    return s.slice(0, 50) || "—";
+  };
+
+  const uniqueContacts = contacts.reduce<ContactWithId[]>((acc, c) => {
+    const norm = c.phone.replace(/\s/g, "");
+    if (acc.some((x) => x.phone.replace(/\s/g, "") === norm)) return acc;
+    acc.push(c);
+    return acc;
+  }, []);
+
+  const [addSectionOpen, setAddSectionOpen] = useState(false);
+
   return (
     <div>
-      <div className="mb-6 grid gap-6 lg:grid-cols-3">
-        {/* Add manually - field by field */}
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setAddSectionOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          <span>Add contacts</span>
+          <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${addSectionOpen ? "rotate-180" : ""}`} />
+        </button>
+        {addSectionOpen && (
+      <div className="grid gap-6 border-t border-slate-200 p-4 lg:grid-cols-3">
+        <div className="rounded-lg border border-slate-100 p-4">
           <h3 className="mb-2 font-medium text-slate-900">Add contact</h3>
           <p className="mb-3 text-sm text-slate-500">
             Add a single contact with phone and optional name.
@@ -1470,92 +1655,30 @@ function ContactsTab({
           )}
         </div>
       </div>
-
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-medium text-slate-900">
-          Contacts ({total})
-        </h3>
-        {hubspotConnected && selectedContactsForSync.size > 0 && (
-          <button
-            type="button"
-            onClick={handleBulkSync}
-            disabled={bulkSyncing}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-70"
-          >
-            {bulkSyncing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Syncing {selectedContactsForSync.size}...
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" />
-                Sync {selectedContactsForSync.size} to HubSpot
-              </>
-            )}
-          </button>
         )}
+      </div>
+
+      <div className="mb-4">
+        <h3 className="font-medium text-slate-900">
+          Enquiries ({uniqueContacts.length})
+        </h3>
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/50">
-              {hubspotConnected && (
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={contacts.length > 0 && selectedContactsForSync.size === contacts.length}
-                    onChange={() => {
-                      if (selectedContactsForSync.size === contacts.length) {
-                        setSelectedContactsForSync(new Set());
-                      } else {
-                        setSelectedContactsForSync(new Set(contacts.map((c) => c.id)));
-                      }
-                    }}
-                    className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                    title="Select all for bulk sync"
-                  />
-                </th>
-              )}
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Phone
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Name
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Status
-              </th>
-              {hubspotConnected && (
-                <th className="px-4 py-3 text-left font-medium text-slate-700">
-                  HubSpot
-                </th>
-              )}
-              {hubspotConnected && (
-                <th className="px-4 py-3 text-left font-medium text-slate-700">
-                  Actions
-                </th>
-              )}
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Last updated
-              </th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Phone</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Name</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Email</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Status</th>
             </tr>
           </thead>
           <tbody>
-            {contacts.map((c) => (
-              <tr key={c.id} className="border-b border-slate-100">
-                {hubspotConnected && (
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedContactsForSync.has(c.id)}
-                      onChange={() => toggleContactForSync(c.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                    />
-                  </td>
-                )}
-                <td className="px-4 py-3 text-slate-900">{c.phone}</td>
-                <td className="px-4 py-3 text-slate-600">{c.name ?? "—"}</td>
+            {uniqueContacts.map((c) => (
+              <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                <td className="px-4 py-3 font-mono text-slate-900">{c.phone}</td>
+                <td className="px-4 py-3 text-slate-700">{displayName(c.name)}</td>
+                <td className="px-4 py-3 text-slate-600">{c.email ?? "—"}</td>
                 <td className="px-4 py-3">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
@@ -1563,83 +1686,13 @@ function ContactsTab({
                         ? "bg-emerald-100 text-emerald-700"
                         : c.status === "failed"
                           ? "bg-red-100 text-red-700"
-                          : "bg-slate-100 text-slate-600"
+                          : c.status === "calling"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-slate-100 text-slate-600"
                     }`}
                   >
                     {c.status}
                   </span>
-                </td>
-                {hubspotConnected && (
-                  <td className="px-4 py-3">
-                    {c.hubspotContactId ? (
-                      <div className="flex flex-col gap-1">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                          <CheckCircle className="h-3 w-3" />
-                          Synced
-                        </span>
-                        {hubspotAccountId && (
-                          <a
-                            href={getHubSpotContactUrl(
-                              c.hubspotContactId,
-                              hubspotAccountId,
-                            )}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline"
-                            title="Open this contact's record in HubSpot"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                            View
-                          </a>
-                        )}
-                        {c.hubspotLeadStatus && (
-                          <span className="text-xs text-slate-500">
-                            Lead status: {c.hubspotLeadStatus}
-                          </span>
-                        )}
-                        {c.lastSyncedToHubSpot && (
-                          <span
-                            className="text-xs text-slate-500"
-                            title={`Last synced to HubSpot: ${new Date(
-                              c.lastSyncedToHubSpot,
-                            ).toLocaleString()}. Results appear on the contact's timeline.`}
-                          >
-                            {formatTimeAgo(c.lastSyncedToHubSpot)}
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                        Not synced
-                      </span>
-                    )}
-                  </td>
-                )}
-                {hubspotConnected && (
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSyncContact(c.id)}
-                      disabled={syncingContactId === c.id}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      title="Sync call results to this contact's record in HubSpot (Lead Status, notes, recording)"
-                    >
-                      {syncingContactId === c.id ? (
-                        <>
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Syncing...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="h-3 w-3" />
-                          Sync
-                        </>
-                      )}
-                    </button>
-                  </td>
-                )}
-                <td className="px-4 py-3 text-slate-500 text-xs">
-                  {new Date(c.updatedAt).toLocaleDateString()}
                 </td>
               </tr>
             ))}
@@ -1821,6 +1874,16 @@ function QueueTab({
     setCallWindowStart(project.callWindowStart ?? "09:00");
     setCallWindowEnd(project.callWindowEnd ?? "17:00");
   }, [project.callWindowStart, project.callWindowEnd]);
+
+  const queueDisplayName = (raw: string | null | undefined): string => {
+    if (!raw?.trim()) return "—";
+    let s = raw.trim();
+    const urlIdx = s.search(/https?:\/\//i);
+    if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+    const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+    if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+    return s.slice(0, 50) || "—";
+  };
 
   const saveCallWindow = () => {
     setUpdating(true);
@@ -2069,7 +2132,7 @@ function QueueTab({
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <div>
-            <label className="mb-1 block text-xs text-slate-600">Status filter</label>
+            <label className="mb-1 block text-xs text-slate-600" title="Pending = not yet called. Failed = no answer/busy — use Retry to redial. Successful = call completed.">Status filter</label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
@@ -2077,8 +2140,8 @@ function QueueTab({
             >
               <option value="all">All</option>
               <option value="pending">Pending</option>
-              <option value="failed">Failed (retry)</option>
-              <option value="success">Success</option>
+              <option value="failed">Failed — redial</option>
+              <option value="success">Successful</option>
               <option value="calling">Calling</option>
             </select>
           </div>
@@ -2244,11 +2307,20 @@ function QueueTab({
                       className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
                     />
                   </td>
-                  <td className="px-4 py-3 text-slate-900">{c.phone}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.name ?? "—"}</td>
+                  <td className="px-4 py-3 font-mono text-slate-900">{c.phone}</td>
+                  <td className="px-4 py-3 text-slate-700">{queueDisplayName(c.name)}</td>
                   <td className="px-4 py-3">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
+                      title={
+                        c.status === "success"
+                          ? "Successful: Call completed. Use Retry to call again."
+                          : c.status === "failed"
+                            ? "Failed: No answer, busy, or error. Use Retry to redial."
+                            : c.status === "calling"
+                              ? "Calling: Call in progress."
+                              : "Pending: Not yet called. Add to queue and Start calling."
+                      }
+                      className={`cursor-help rounded-full px-2 py-0.5 text-xs font-medium ${
                         c.status === "success"
                           ? "bg-emerald-100 text-emerald-700"
                           : c.status === "failed"
@@ -2258,7 +2330,7 @@ function QueueTab({
                               : "bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {c.status}
+                      {c.status === "success" ? "Successful" : c.status === "failed" ? "Failed" : c.status === "calling" ? "Calling" : "Pending"}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -4008,6 +4080,22 @@ function ResultsTab({
   });
 
   const selectedRow = selectedRowIndex !== null ? filteredResultRows[selectedRowIndex] ?? null : null;
+
+  const resultsDisplayName = (raw: string | null | undefined): string => {
+    if (!raw?.trim()) return "—";
+    let s = raw.trim();
+    const urlIdx = s.search(/https?:\/\//i);
+    if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+    const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+    if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+    return s.slice(0, 50) || "—";
+  };
+
+  const getWhyNotBookedDisplay = (capturedData: Record<string, string | number | null> | null | undefined): string => {
+    const v = getWhyNotBooked(capturedData, project.captureFields);
+    return v || "—";
+  };
+
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -4077,78 +4165,33 @@ function ResultsTab({
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/50">
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Contact
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Status
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Duration
-              </th>
-              {project.captureFields?.map((f) => (
-                <th
-                  key={f.key}
-                  className="px-4 py-3 text-left font-medium text-slate-700"
-                >
-                  {f.label}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Transcript
-              </th>
-              <th className="px-4 py-3 text-left font-medium text-slate-700">
-                Recording
-              </th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Contact</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Booked viewing/test drive</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Transcript</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Recording</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-700">Why testdrive not booked</th>
             </tr>
           </thead>
           <tbody>
             {filteredResultRows.map(({ contact: c, call }, i) => {
-              const status = call.failureReason ? "failed" : "success";
+              const booked = isCallBooking(call.capturedData);
               return (
                 <tr
                   key={c.id + "-" + (call.vapiCallId ?? call.attemptedAt ?? i)}
-                  className="border-b border-slate-100"
+                  className="border-b border-slate-100 hover:bg-slate-50/50"
                 >
                   <td className="px-4 py-3">
-                    <span className="font-medium text-slate-900">{c.phone}</span>
-                    {c.name && (
-                      <span className="ml-1 text-slate-500">({c.name})</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
                     <div className="flex flex-col gap-0.5">
-                      <span
-                        className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs ${
-                          status === "success"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : status === "failed"
-                              ? "bg-red-100 text-red-700"
-                              : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {status}
-                      </span>
-                      {status === "failed" && call.failureReason && (
-                        <span
-                          className="max-w-[220px] text-xs text-slate-500"
-                          title={call.failureReason}
-                        >
-                          {call.failureReason}
-                        </span>
-                      )}
+                      <span className="font-mono font-medium text-slate-900">{c.phone}</span>
+                      <span className="text-slate-600">{resultsDisplayName(c.name)}</span>
+                      {c.email && <span className="text-xs text-slate-500">{c.email}</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {call.durationSeconds
-                      ? `${call.durationSeconds}s`
-                      : "—"}
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${booked ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                      {booked ? "Yes" : "No"}
+                    </span>
                   </td>
-                  {project.captureFields?.map((f) => (
-                    <td key={f.key} className="px-4 py-3 text-slate-600">
-                      {call.capturedData?.[f.key] ?? "—"}
-                    </td>
-                  ))}
                   <td className="px-4 py-3">
                     {call.transcript ? (
                       <button
@@ -4177,6 +4220,9 @@ function ResultsTab({
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td className="max-w-[220px] truncate px-4 py-3 text-slate-600" title={booked ? "" : getWhyNotBookedDisplay(call.capturedData)}>
+                    {booked ? "—" : getWhyNotBookedDisplay(call.capturedData)}
                   </td>
                 </tr>
               );
@@ -4400,8 +4446,7 @@ function ExportTab({
     <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-6">
       <div>
         <p className="mb-4 text-sm text-slate-600">
-          Export to CSV with columns: contact (phone, name), status, duration,
-          date, capture fields, transcript, recording link.
+          Export to CSV: phone, name, email, status, duration, date, booked viewing/test drive (Yes/No), why testdrive not booked, transcript, recording link.
         </p>
         <div className="flex flex-wrap gap-3">
           <button
@@ -4442,11 +4487,11 @@ function ExportTab({
       <div className="border-t border-slate-200 pt-6">
         <h3 className="mb-2 text-sm font-semibold text-slate-900">Google Sheets</h3>
         <p className="mb-3 text-sm text-slate-600">
-          Push the same export data to a Google Sheet. Share the sheet with the service account as Editor first.
+          Push the same data to a Google Sheet. Share the sheet with the service account as Editor.
         </p>
         {sheetsStatus && !sheetsStatus.configured && (
-          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            Google Sheets export is not configured for this server (missing GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON).
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Not configured. Add GOOGLE_SHEETS_SERVICE_ACCOUNT_JSON to enable.
           </p>
         )}
         {sheetsStatus?.configured && (

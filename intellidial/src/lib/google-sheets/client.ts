@@ -7,8 +7,19 @@
 import { google } from "googleapis";
 import type { JWT } from "google-auth-library";
 import type { ProjectDoc, ContactDoc } from "@/lib/firebase/types";
+import { isCallBooking, getWhyNotBooked } from "@/lib/utils/call-stats";
 
 type ContactWithId = ContactDoc & { id: string };
+
+function sanitizeName(raw: string | null | undefined): string {
+  if (!raw?.trim()) return "";
+  let s = raw.trim();
+  const urlIdx = s.search(/https?:\/\//i);
+  if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+  const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+  if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+  return s.slice(0, 80).trim();
+}
 
 const SHEET_NAME = "Sheet1";
 
@@ -65,14 +76,15 @@ function buildExportRows(
   contacts: ContactWithId[],
   filterFailed: boolean
 ): string[][] {
-  const captureLabels = project.captureFields?.map((f) => f.label) ?? [];
   const headers = [
     "Phone",
     "Name",
+    "Email",
     "Status",
     "Duration (s)",
     "Date",
-    ...captureLabels,
+    "Booked viewing/test drive",
+    "Why testdrive not booked",
     "Transcript",
     "Recording",
   ];
@@ -80,24 +92,25 @@ function buildExportRows(
     ? contacts.filter((c) => c.status === "failed")
     : contacts;
   const rows = list.map((c) => {
-    const call = c.callResult;
+    const call = c.callResult ?? c.callHistory?.at(-1);
     const date = call?.attemptedAt
       ? new Date(call.attemptedAt).toISOString().slice(0, 10)
       : "";
     const duration = call?.durationSeconds ?? "";
-    const captureVals =
-      project.captureFields?.map((f) => String(call?.capturedData?.[f.key] ?? "")) ?? [];
-    const row: string[] = [
+    const booked = isCallBooking(call?.capturedData);
+    const whyNotBooked = getWhyNotBooked(call?.capturedData, project.captureFields);
+    return [
       c.phone,
-      c.name ?? "",
+      sanitizeName(c.name),
+      c.email ?? "",
       c.status,
       String(duration),
       date,
-      ...captureVals,
+      booked ? "Yes" : "No",
+      booked ? "" : whyNotBooked,
       call?.transcript ?? "",
       call?.recordingUrl ?? "",
     ];
-    return row;
   });
   return [headers, ...rows];
 }

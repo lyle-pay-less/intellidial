@@ -54,7 +54,7 @@ export async function POST(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
   const body = (await req.json()) as Record<string, unknown>;
-  const items = body?.contacts as Array<{ phone: string; name?: string }>;
+  const items = body?.contacts as Array<{ phone: string; name?: string; email?: string }>;
   if (!Array.isArray(items) || items.length === 0) {
     return NextResponse.json(
       { error: "contacts array is required" },
@@ -62,6 +62,6 @@ export async function POST(
     );
   }
 
-  const created = await createContacts(id, items);
+  const created = await createContacts(id, items, { skipDuplicates: true });
   return NextResponse.json({ created: created.length, contacts: created });
 }

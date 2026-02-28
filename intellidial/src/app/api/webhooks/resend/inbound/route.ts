@@ -132,6 +132,12 @@ export async function POST(req: NextRequest) {
         emailId,
       }, { status: 400 });
     }
+    // Add sender email (from metadata)
+    const fromRaw = (email?.from ?? "").trim();
+    if (fromRaw) {
+      const match = fromRaw.match(/<([^>]+)>/);
+      enquiry.email = match ? match[1].trim() : fromRaw;
+    }
 
     // One org owns all dealers (single-tenant). Resolve project by dealer Forwarding email.
     const rawTo = body.data?.to ?? email?.to ?? [];

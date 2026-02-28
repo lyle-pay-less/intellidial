@@ -7,6 +7,8 @@ export type ParsedEnquiry = {
   name: string;
   phone: string;
   vehicleLink: string;
+  /** Sender email (from email.from, not body). */
+  email?: string;
 };
 
 const NAME_KEYS = /^(?:(?:lead\s*)?name|contact\s*name|customer\s*name|enquiry\s*from|contact)\s*[:=]/i;
@@ -18,13 +20,25 @@ const SA_PHONE_REGEX = /(?:\+27|0|27)\s*[\d\s\-]{8,12}\d/g;
 /** AutoTrader (and similar) listing URL */
 const VEHICLE_LINK_REGEX = /https?:\/\/(?:www\.)?(?:autotrader\.co\.za|cars\.co\.za)\/[^\s<>"']+/gi;
 
+/** Sanitize name: take only clean name, max 80 chars, no URLs or phone fragments. */
+function sanitizeName(raw: string): string {
+  let s = raw.trim();
+  // Stop at common delimiters that indicate we've captured too much
+  const stopAt = [/\s*phone\s*[:=]/i, /\s*tel\s*[:=]/i, /\s*cell\s*[:=]/i, /\s*mobile\s*[:=]/i, /https?:\/\//i, /\d{8,}/];
+  for (const re of stopAt) {
+    const idx = s.search(re);
+    if (idx > 0) s = s.slice(0, idx).trim();
+  }
+  return s.slice(0, 80).trim();
+}
+
 function extractByLabel(text: string): Partial<ParsedEnquiry> {
   const out: Partial<ParsedEnquiry> = {};
   const lines = text.split(/\r?\n/);
   for (const line of lines) {
     const trimmed = line.trim();
     if (NAME_KEYS.test(trimmed)) {
-      out.name = trimmed.replace(NAME_KEYS, "").trim();
+      out.name = sanitizeName(trimmed.replace(NAME_KEYS, "").trim());
     } else if (PHONE_KEYS.test(trimmed)) {
       out.phone = trimmed.replace(PHONE_KEYS, "").trim().replace(/\s/g, "");
     } else if (LINK_KEYS.test(trimmed)) {
@@ -77,7 +91,7 @@ export function parseEnquiryEmail(text: string, html?: string | null): ParsedEnq
     const lines = combined.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     for (const line of lines) {
       if (line.length > 3 && line.length < 50 && /^[A-Za-z][A-Za-z\s\-']+$/.test(line) && !/\d/.test(line)) {
-        name = line;
+        name = sanitizeName(line);
         break;
       }
     }

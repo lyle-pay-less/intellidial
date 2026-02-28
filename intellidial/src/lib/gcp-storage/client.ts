@@ -7,8 +7,19 @@
 import { Storage } from "@google-cloud/storage";
 import type { ProjectDoc, ContactDoc } from "@/lib/firebase/types";
 import crypto from "crypto";
+import { isCallBooking, getWhyNotBooked } from "@/lib/utils/call-stats";
 
 type ContactWithId = ContactDoc & { id: string };
+
+function sanitizeName(raw: string | null | undefined): string {
+  if (!raw?.trim()) return "";
+  let s = raw.trim();
+  const urlIdx = s.search(/https?:\/\//i);
+  if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+  const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+  if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+  return s.slice(0, 80).trim();
+}
 
 // Encryption key - MUST be set in environment variables
 const ENCRYPTION_KEY = process.env.INTEGRATION_ENCRYPTION_KEY;
@@ -74,21 +85,22 @@ export function getStorageClient(encryptedServiceAccountKey: string): Storage {
 }
 
 /**
- * Build CSV content from project and contacts
+ * Build CSV content from project and contacts (same format as export API)
  */
 function buildCSVContent(
   project: ProjectDoc & { id: string },
   contacts: ContactWithId[],
   filterFailed: boolean
 ): string {
-  const captureLabels = project.captureFields?.map((f) => f.label) ?? [];
   const headers = [
     "Phone",
     "Name",
+    "Email",
     "Status",
     "Duration (s)",
     "Date",
-    ...captureLabels,
+    "Booked viewing/test drive",
+    "Why testdrive not booked",
     "Transcript",
     "Recording",
   ];
@@ -97,36 +109,36 @@ function buildCSVContent(
     ? contacts.filter((c) => c.status === "failed")
     : contacts;
   
+  const escapeCSV = (val: string) => {
+    if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  };
+  
   const rows = list.map((c) => {
-    const call = c.callResult;
+    const call = c.callResult ?? c.callHistory?.at(-1);
     const date = call?.attemptedAt
       ? new Date(call.attemptedAt).toISOString().slice(0, 10)
       : "";
     const duration = call?.durationSeconds ?? "";
-    const captureVals =
-      project.captureFields?.map((f) => String(call?.capturedData?.[f.key] ?? "")) ?? [];
-    
-    // Escape CSV values
-    const escapeCSV = (val: string) => {
-      if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-        return `"${val.replace(/"/g, '""')}"`;
-      }
-      return val;
-    };
-    
+    const booked = isCallBooking(call?.capturedData);
+    const whyNotBooked = getWhyNotBooked(call?.capturedData, project.captureFields);
     return [
       c.phone,
-      c.name ?? "",
+      sanitizeName(c.name),
+      c.email ?? "",
       c.status,
       String(duration),
       date,
-      ...captureVals,
+      booked ? "Yes" : "No",
+      booked ? "" : whyNotBooked,
       call?.transcript ?? "",
       call?.recordingUrl ?? "",
-    ].map(escapeCSV).join(",");
+    ].map((v) => escapeCSV(String(v ?? ""))).join(",");
   });
   
-  return [headers.map((h) => `"${h}"`).join(","), ...rows].join("\n");
+  return [headers.join(","), ...rows].join("\n");
 }
 
 /**

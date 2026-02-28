@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProject } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
+import { isCallBooking, getWhyNotBooked } from "@/lib/utils/call-stats";
+
+function sanitizeName(raw: string | null | undefined): string {
+  if (!raw?.trim()) return "";
+  let s = raw.trim();
+  const urlIdx = s.search(/https?:\/\//i);
+  if (urlIdx > 0) s = s.slice(0, urlIdx).trim();
+  const phoneIdx = s.search(/\b(?:phone|tel|cell)\s*[:=]/i);
+  if (phoneIdx > 0) s = s.slice(0, phoneIdx).trim();
+  return s.slice(0, 80).trim();
+}
 
 function buildCsv(
   project: Awaited<ReturnType<typeof getProject>>,
@@ -13,14 +24,15 @@ function buildCsv(
     ? contactList.filter((c) => c.status === "failed")
     : contactList;
 
-  const captureLabels = project.captureFields?.map((f) => f.label) ?? [];
   const headers = [
     "Phone",
     "Name",
+    "Email",
     "Status",
     "Duration (s)",
     "Date",
-    ...captureLabels,
+    "Booked viewing/test drive",
+    "Why testdrive not booked",
     "Transcript",
     "Recording",
   ];
@@ -35,23 +47,24 @@ function buildCsv(
   };
 
   const rows = contacts.map((c) => {
-    const date = c.callResult?.attemptedAt
-      ? new Date(c.callResult.attemptedAt).toISOString().slice(0, 10)
+    const call = c.callResult ?? c.callHistory?.at(-1);
+    const date = call?.attemptedAt
+      ? new Date(call.attemptedAt).toISOString().slice(0, 10)
       : "";
-    const duration = c.callResult?.durationSeconds ?? "";
-    const captureVals =
-      project.captureFields?.map(
-        (f) => c.callResult?.capturedData?.[f.key] ?? ""
-      ) ?? [];
-    const transcript = c.callResult?.transcript ?? "";
-    const recording = c.callResult?.recordingUrl ?? "";
+    const duration = call?.durationSeconds ?? "";
+    const booked = isCallBooking(call?.capturedData);
+    const whyNotBooked = getWhyNotBooked(call?.capturedData, project.captureFields);
+    const transcript = call?.transcript ?? "";
+    const recording = call?.recordingUrl ?? "";
     return [
       c.phone,
-      c.name ?? "",
+      sanitizeName(c.name),
+      c.email ?? "",
       c.status,
       duration,
       date,
-      ...captureVals,
+      booked ? "Yes" : "No",
+      booked ? "" : whyNotBooked,
       transcript,
       recording,
     ]

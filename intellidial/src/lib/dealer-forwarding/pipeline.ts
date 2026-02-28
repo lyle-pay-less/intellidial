@@ -33,10 +33,10 @@ export async function runForwardedEnquiryPipeline(
       return { ok: false, error: "Project has no orgId" };
     }
 
-    // 4. Create contact (back office)
+    // 4. Create contact (back office) — skip if duplicate phone
     const created = await createContacts(projectId, [
-      { phone: enquiry.phone, name: enquiry.name },
-    ]);
+      { phone: enquiry.phone, name: enquiry.name, email: enquiry.email },
+    ], { skipDuplicates: true });
     const contactId = created[0]?.id;
     if (!contactId) {
       return { ok: false, error: "Failed to create contact" };

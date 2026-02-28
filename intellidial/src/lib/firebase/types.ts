@@ -19,6 +19,8 @@ export type CallResult = {
   capturedData?: Record<string, string | number | null>;
   attemptedAt?: string; // ISO date
   failureReason?: string;
+  /** VAPI endedReason (e.g. "completed", "no-answer") — used for answer rate. */
+  endedReason?: string;
 };
 
 /** One call in history (CallResult + VAPI call id for idempotency). */
@@ -153,6 +155,8 @@ export type ContactDoc = {
   projectId: string;
   phone: string;
   name?: string | null;
+  /** Enquirer's email (from forwarded enquiry). */
+  email?: string | null;
   /** Do-not-call: set when contact opts out (POPIA / compliance). Skip when starting calls. */
   optOut?: boolean | null;
   status: ContactStatus;
