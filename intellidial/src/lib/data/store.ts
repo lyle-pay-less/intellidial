@@ -890,6 +890,22 @@ function dealerFromFirestoreDoc(docId: string, d: Record<string, unknown>, orgId
   };
 }
 
+/**
+ * Single-tenant: one org owns all dealers. When there is exactly one organization, return its ID.
+ * Dealer forwarding webhook uses this so no env var is needed for the normal case.
+ */
+export async function getFirstOrgIdIfSingle(): Promise<string | null> {
+  if (!isFirebaseAdminConfigured()) return null;
+  try {
+    const db = getFirebaseAdminFirestore();
+    const snap = await db.collection(COLLECTIONS.organizations).limit(2).get();
+    if (snap.docs.length === 1) return snap.docs[0].id;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export async function listDealers(orgId: string): Promise<DealerWithId[]> {
   if (isFirebaseAdminConfigured()) {
     try {

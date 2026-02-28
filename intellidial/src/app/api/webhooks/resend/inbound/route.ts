@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { parseEnquiryEmail } from "@/lib/dealer-forwarding/parse-email";
 import { runForwardedEnquiryPipeline } from "@/lib/dealer-forwarding/pipeline";
+import { listDealers, getFirstOrgIdIfSingle } from "@/lib/data/store";
 
 /**
  * POST /api/webhooks/resend/inbound
@@ -132,12 +133,30 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const projectId = process.env.DEALER_FORWARDING_PROJECT_ID?.trim();
+    // One org owns all dealers (single-tenant). Resolve project by dealer Forwarding email.
+    const toAddresses = (body.data?.to ?? email?.to ?? [])
+      .filter((t): t is string => typeof t === "string")
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean);
+    const orgId = process.env.DEALER_FORWARDING_ORG_ID?.trim() ?? (await getFirstOrgIdIfSingle()) ?? null;
+    let projectId = process.env.DEALER_FORWARDING_PROJECT_ID?.trim() ?? null;
+
+    if (orgId && toAddresses.length > 0) {
+      const dealersList = await listDealers(orgId);
+      const dealer = dealersList.find(
+        (d) => d.forwardingEmail && toAddresses.includes(d.forwardingEmail.trim().toLowerCase())
+      );
+      if (dealer?.projectId) projectId = dealer.projectId;
+    }
+
     if (!projectId) {
-      console.error("[Resend inbound] DEALER_FORWARDING_PROJECT_ID not set");
+      console.error(
+        "[Resend inbound] No project: add a dealer with Forwarding email set to this inbox address (and a linked project). If you have multiple orgs, set DEALER_FORWARDING_ORG_ID in Cloud Run."
+      );
       return NextResponse.json({
         ok: false,
-        error: "Dealer forwarding project not configured",
+        error:
+          "No dealer matched this inbox: set a dealer's Forwarding email to this address and link a project. (Multi-org: set DEALER_FORWARDING_ORG_ID.)",
         emailId,
       }, { status: 503 });
     }
