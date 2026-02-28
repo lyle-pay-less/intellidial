@@ -260,5 +260,46 @@ export async function GET(
     synced++;
   }
 
+  // Backfill: contacts already success/failed but missing duration or recording (e.g. webhook had incomplete artifact)
+  const needBackfill = contacts.filter(
+    (c) =>
+      (c.status === "success" || c.status === "failed") &&
+      c.lastVapiCallId?.trim() &&
+      (c.callResult?.durationSeconds == null ||
+        c.callResult?.durationSeconds === 0 ||
+        !(c.callResult?.recordingUrl ?? "").trim())
+  );
+  const captureFieldKeysAll = (project.captureFields ?? []).map((f) => f.key).filter(Boolean);
+  for (const contact of needBackfill) {
+    const callId = contact.lastVapiCallId!;
+    const call = await getCall(callId);
+    if (!call || call.status !== "ended") continue;
+    const startedAt = call.startedAt ? new Date(call.startedAt).getTime() : 0;
+    const endedAt = call.endedAt ? new Date(call.endedAt).getTime() : 0;
+    const durationSeconds =
+      startedAt && endedAt && endedAt >= startedAt
+        ? Math.round((endedAt - startedAt) / 1000)
+        : contact.callResult?.durationSeconds ?? 0;
+    const recordingUrl = getRecordingUrl(call.artifact?.recording) ?? contact.callResult?.recordingUrl;
+    const transcript = call.artifact?.transcript ?? contact.callResult?.transcript;
+    const capturedData =
+      mapStructuredOutputsToCapturedData(
+        call.artifact?.structuredOutputs,
+        captureFieldKeysAll
+      ) ?? contact.callResult?.capturedData;
+    const attemptedAt =
+      call.endedAt ?? call.startedAt ?? contact.callResult?.attemptedAt ?? new Date().toISOString();
+    const callResult = {
+      ...contact.callResult,
+      durationSeconds: durationSeconds || contact.callResult?.durationSeconds,
+      recordingUrl: recordingUrl || contact.callResult?.recordingUrl,
+      transcript: transcript ?? contact.callResult?.transcript,
+      attemptedAt,
+      ...(capturedData ? { capturedData } : {}),
+    };
+    await updateContact(contact.id, { callResult });
+    synced++;
+  }
+
   return NextResponse.json({ synced });
 }

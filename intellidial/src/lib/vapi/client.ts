@@ -697,19 +697,26 @@ export type VapiCallResponse = {
   assistantId?: string | null;
   artifact?: {
     transcript?: string | null;
-    /** VAPI may return recording as string URL or as { url } */
-    recording?: string | { url?: string | null } | null;
+    /** VAPI may return recording as string, { url }, or { mono, stereo, video } */
+    recording?: RecordingShape;
     structuredOutputs?: VapiStructuredOutputs | null;
   } | null;
 };
 
-/** Extract recording URL from VAPI artifact (handles recording as string or { url }). */
-export function getRecordingUrl(
-  recording: string | { url?: string | null } | null | undefined
-): string | undefined {
+/** VAPI recording can be: string URL, { url }, or { mono, stereo, video } URLs. */
+type RecordingShape =
+  | string
+  | { url?: string | null }
+  | { mono?: string | null; stereo?: string | null; video?: string | null }
+  | null
+  | undefined;
+
+/** Extract recording URL from VAPI artifact (handles string, { url }, or { mono, stereo, video }). */
+export function getRecordingUrl(recording: RecordingShape): string | undefined {
   if (!recording) return undefined;
   if (typeof recording === "string" && recording.trim()) return recording.trim();
-  const url = (recording as { url?: string | null }).url;
+  const o = recording as Record<string, string | null | undefined>;
+  const url = o.url ?? o.mono ?? o.stereo ?? o.video;
   return typeof url === "string" && url.trim() ? url.trim() : undefined;
 }
 
