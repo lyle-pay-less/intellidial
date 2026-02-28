@@ -113,10 +113,14 @@ export async function POST(req: NextRequest) {
       artifact?.structuredOutputs,
       captureFieldKeys
     );
+    const recordingUrl = getRecordingUrl(artifact?.recording);
+    if (!recordingUrl && !isFailed && artifact) {
+      console.warn("[Webhook] call-ended: no recording URL in artifact (callId=%s); try Sync call status later to backfill.", call.id);
+    }
     const callResult = {
       durationSeconds: isFailed ? 0 : durationSeconds,
       transcript: artifact?.transcript ?? undefined,
-      recordingUrl: getRecordingUrl(artifact?.recording),
+      recordingUrl,
       attemptedAt,
       ...(capturedData ? { capturedData } : {}),
       ...(isFailed ? { failureReason: endedReason || "Call ended" } : {}),
