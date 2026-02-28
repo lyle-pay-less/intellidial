@@ -138,18 +138,8 @@ export type DealerDoc = {
   operationHours?: string | null;
   /** Email; stored for future linking (e.g. enquiries). */
   email?: string | null;
-  /** Dealer name (required). */
-  name: string;
-  /** Physical address. */
-  address?: string | null;
   /** Email to link enquiries back to this dealership (e.g. the address that forwards to leads@ so we know which dealer the lead came from). */
   forwardingEmail?: string | null;
-  /** Dealer phone number. */
-  phoneNumber?: string | null;
-  /** Operation hours, e.g. "Mon–Fri 8–17, Sat 8–12". */
-  operationHours?: string | null;
-  /** Email; stored for future linking (e.g. enquiries). */
-  email?: string | null;
   /** Multiple URLs for dealer context (e.g. dealer site, AutoTrader). */
   contextLinks?: DealerContextLink[] | null;
   /** Linked project id (project has dealerId = this dealer's id). Opening dealer opens this project. */
