@@ -10,7 +10,24 @@ export type FetchHtmlResult =
 
 const FETCH_TIMEOUT_MS = 35_000;
 const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+/** Browser-like headers to reduce bot detection / 503 from listing sites. */
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": USER_AGENT,
+  Accept:
+    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-ZA,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+};
 
 /**
  * Fetch page HTML using Playwright (full JS render). Returns error if Playwright fails or times out.
@@ -89,7 +106,7 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
 async function fetchWithFetch(url: string): Promise<FetchHtmlResult> {
   try {
     const res = await fetch(url, {
-      headers: { "User-Agent": USER_AGENT },
+      headers: BROWSER_HEADERS,
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
