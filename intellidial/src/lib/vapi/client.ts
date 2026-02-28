@@ -105,9 +105,9 @@ type VapiAssistantPayload = {
   /** So we receive transcript + recording when the call ends */
   server?: { url: string };
   serverMessages?: string[];
-  /** Recording + structured outputs (extract captureFields from call) */
+  /** Recording + structured outputs (extract captureFields from call). VAPI uses recordingEnabled, not recording.enabled. */
   artifactPlan?: {
-    recording?: { enabled?: boolean };
+    recordingEnabled?: boolean;
     structuredOutputIds?: string[];
   };
   /** When the assistant says one of these, VAPI ends the call (e.g. after saying goodbye). */
@@ -393,8 +393,8 @@ export async function buildAssistantConfig(
   if (webhookUrl) {
     payload.server = { url: webhookUrl };
     payload.serverMessages = ["end-of-call-report"];
-    // VAPI docs: recording.enabled so end-of-call-report includes artifact.recording URL
-    payload.artifactPlan = { recording: { enabled: true } };
+    // VAPI artifactPlan: use recordingEnabled (recording: { enabled } is deprecated and rejected)
+    payload.artifactPlan = { recordingEnabled: true };
   } else if (forWebTest) {
     // Explicitly clear server so PATCH doesn't leave an old URL (which causes daily-error on web).
     (payload as Record<string, unknown>).server = null;

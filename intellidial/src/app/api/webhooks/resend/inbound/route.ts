@@ -134,24 +134,32 @@ export async function POST(req: NextRequest) {
     }
 
     // One org owns all dealers (single-tenant). Resolve project by dealer Forwarding email.
-    const toAddresses = (body.data?.to ?? email?.to ?? [])
+    const rawTo = body.data?.to ?? email?.to ?? [];
+    const toAddresses = (Array.isArray(rawTo) ? rawTo : [rawTo])
       .filter((t): t is string => typeof t === "string")
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
     const orgId = process.env.DEALER_FORWARDING_ORG_ID?.trim() ?? (await getFirstOrgIdIfSingle()) ?? null;
     let projectId = process.env.DEALER_FORWARDING_PROJECT_ID?.trim() ?? null;
 
-    if (orgId && toAddresses.length > 0) {
+    if (orgId) {
       const dealersList = await listDealers(orgId);
-      const dealer = dealersList.find(
-        (d) => d.forwardingEmail && toAddresses.includes(d.forwardingEmail.trim().toLowerCase())
-      );
+      const dealer = toAddresses.length > 0
+        ? dealersList.find(
+            (d) => d.forwardingEmail && toAddresses.includes(d.forwardingEmail.trim().toLowerCase())
+          )
+        : dealersList.find((d) => d.forwardingEmail?.trim().toLowerCase() === "leads@ulkieyen.resend.app");
       if (dealer?.projectId) projectId = dealer.projectId;
+      if (!projectId && (toAddresses.length > 0 || dealersList.length > 0)) {
+        console.log("[Resend inbound] Dealer lookup:", { orgId, toAddresses, dealerCount: dealersList.length, forwardingEmails: dealersList.map((d) => d.forwardingEmail) });
+      }
     }
 
     if (!projectId) {
       console.error(
-        "[Resend inbound] No project: add a dealer with Forwarding email set to this inbox address (and a linked project). If you have multiple orgs, set DEALER_FORWARDING_ORG_ID in Cloud Run."
+        "[Resend inbound] No project: orgId=%s toAddresses=%s — add a dealer with Forwarding email set to this inbox (and a linked project), or set DEALER_FORWARDING_ORG_ID if multiple orgs.",
+        orgId ?? "null",
+        JSON.stringify(toAddresses)
       );
       return NextResponse.json({
         ok: false,
