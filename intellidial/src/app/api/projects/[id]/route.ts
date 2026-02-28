@@ -64,6 +64,11 @@ export async function PATCH(
     "status", "notifyOnComplete", "surveyEnabled", "callWindowStart", "callWindowEnd", "googleSheetId",
     "dealershipEnabled", "vehicleListingUrl", "vehicleContextFullText", "vehicleContextUpdatedAt",
     "callContextInstructions", "identityInstructions", "endingCallInstructions", "complianceInstructions", "voiceOutputInstructions", "vehiclePlaceholderInstructions",
+    "name", "description", "agentName", "agentCompany", "agentNumber", "agentPhoneNumberId", "agentVoice", "userGoal",
+    "industry", "tone", "goal", "agentQuestions", "captureFields", "businessContext", "agentInstructions",
+    "status", "notifyOnComplete", "surveyEnabled", "callWindowStart", "callWindowEnd", "googleSheetId",
+    "dealershipEnabled", "vehicleListingUrl", "vehicleContextFullText", "vehicleContextUpdatedAt",
+    "callContextInstructions", "identityInstructions", "endingCallInstructions", "complianceInstructions", "voiceOutputInstructions", "vehiclePlaceholderInstructions",
     "isDealerProject", "dealerId",
   ] as const;
   for (const key of keys) {

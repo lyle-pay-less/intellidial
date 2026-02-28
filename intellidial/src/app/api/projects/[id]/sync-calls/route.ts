@@ -6,7 +6,15 @@ import {
   incrementOrgUsage,
 } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
-import { getCall, mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
+import { getCall, listCalls, mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
+
+/** Normalize phone for matching (same as call-ended webhook). */
+function normalizePhone(raw: string): string {
+  let s = raw.trim().replace(/\s/g, "");
+  if (s.startsWith("0")) s = "+27" + s.slice(1);
+  else if (!s.startsWith("+")) s = "+27" + s;
+  return s;
+}
 
 /** Ended reasons that indicate a failed call (no answer, busy, etc.). */
 const FAILED_END_REASONS = new Set([
@@ -261,17 +269,83 @@ export async function GET(
   }
 
   // Backfill: contacts already success/failed but missing duration or recording (e.g. webhook had incomplete artifact)
-  const needBackfill = contacts.filter(
-    (c) =>
-      (c.status === "success" || c.status === "failed") &&
-      c.lastVapiCallId?.trim() &&
-      (c.callResult?.durationSeconds == null ||
-        c.callResult?.durationSeconds === 0 ||
-        !(c.callResult?.recordingUrl ?? "").trim())
+  // Use lastVapiCallId, or last callHistory[].vapiCallId, or vapiCallId (in-flight field sometimes left set)
+  const successOrFailed = contacts.filter(
+    (c) => c.status === "success" || c.status === "failed"
   );
+  const missingData = successOrFailed.filter(
+    (c) =>
+      c.callResult?.durationSeconds == null ||
+      c.callResult?.durationSeconds === 0 ||
+      !(c.callResult?.recordingUrl ?? "").trim()
+  );
+  const needBackfill = missingData
+    .map((c) => {
+      const callId =
+        c.lastVapiCallId?.trim() ||
+        c.callHistory?.at(-1)?.vapiCallId?.trim() ||
+        c.vapiCallId?.trim() ||
+        "";
+      return { contact: c, callId };
+    })
+    .filter(({ callId }) => !!callId);
+
+  console.log("[Sync Calls] Backfill:", {
+    totalContacts: contacts.length,
+    successOrFailed: successOrFailed.length,
+    missingDurationOrRecording: missingData.length,
+    withCallId: needBackfill.length,
+    sample: needBackfill.slice(0, 2).map(({ contact, callId }) => ({
+      contactId: contact.id,
+      phone: contact.phone,
+      callId,
+      lastVapiCallId: contact.lastVapiCallId ?? null,
+      callHistoryLen: contact.callHistory?.length ?? 0,
+    })),
+  });
+  let backfillList = needBackfill;
+  if (missingData.length > 0 && needBackfill.length === 0) {
+    console.warn("[Sync Calls] Contacts need backfill but have no VAPI call ID:", {
+      contactIds: missingData.map((c) => c.id),
+      phones: missingData.map((c) => c.phone),
+    });
+    // Fallback: list recent VAPI calls for this project's assistant and match by phone
+    const assistantId = (project as { assistantId?: string | null }).assistantId?.trim();
+    if (assistantId) {
+      const recentCalls = await listCalls({ assistantId, limit: 80 });
+      const byPhone = new Map<string, { contact: (typeof missingData)[0]; callId: string }>();
+      for (const c of missingData) {
+        if (byPhone.has(normalizePhone(c.phone))) continue;
+        const wantPhone = normalizePhone(c.phone);
+        const call = recentCalls.find(
+          (r) => r.customer?.number && normalizePhone(r.customer.number) === wantPhone
+        );
+        if (call) byPhone.set(wantPhone, { contact: c, callId: call.id });
+      }
+      // If list didn't include customer number (0 matches), fetch each call to get full details and match
+      if (byPhone.size === 0 && recentCalls.length > 0) {
+        for (const listItem of recentCalls) {
+          if (byPhone.size >= missingData.length) break;
+          const full = await getCall(listItem.id);
+          const phone = full?.customer?.number?.trim();
+          if (!phone) continue;
+          const norm = normalizePhone(phone);
+          const contact = missingData.find((c) => normalizePhone(c.phone) === norm);
+          if (contact && !byPhone.has(norm)) byPhone.set(norm, { contact, callId: listItem.id });
+        }
+        if (byPhone.size > 0) {
+          console.log("[Sync Calls] Matched contacts to VAPI calls by phone (via getCall):", byPhone.size);
+        }
+      }
+      if (byPhone.size > 0) {
+        backfillList = Array.from(byPhone.values());
+        console.log("[Sync Calls] Historic backfill: matched", backfillList.length, "contacts to calls by phone");
+      }
+    }
+  }
+
   const captureFieldKeysAll = (project.captureFields ?? []).map((f) => f.key).filter(Boolean);
-  for (const contact of needBackfill) {
-    const callId = contact.lastVapiCallId!;
+  for (const { contact, callId } of backfillList) {
     const call = await getCall(callId);
     if (!call || call.status !== "ended") continue;
     const startedAt = call.startedAt ? new Date(call.startedAt).getTime() : 0;
@@ -297,7 +371,26 @@ export async function GET(
       attemptedAt,
       ...(capturedData ? { capturedData } : {}),
     };
-    await updateContact(contact.id, { callResult });
+    // Results table reads from callHistory; update the matching entry so the UI shows recording
+    let callHistory = contact.callHistory ?? [];
+    const entryIndex = callHistory.findIndex((e) => (e as { vapiCallId?: string }).vapiCallId === callId);
+    const idx = entryIndex >= 0 ? entryIndex : callHistory.length - 1;
+    if (idx >= 0 && callHistory[idx]) {
+      callHistory = [...callHistory];
+      callHistory[idx] = {
+        ...callHistory[idx],
+        durationSeconds: callResult.durationSeconds ?? callHistory[idx].durationSeconds,
+        recordingUrl: callResult.recordingUrl ?? callHistory[idx].recordingUrl,
+        transcript: callResult.transcript ?? callHistory[idx].transcript,
+        ...(callResult.capturedData ? { capturedData: callResult.capturedData } : {}),
+      };
+    }
+    await updateContact(contact.id, {
+      callResult,
+      ...(callHistory.length > 0 ? { callHistory } : {}),
+      ...(contact.lastVapiCallId ? {} : { lastVapiCallId: callId }),
+      ...(contact.vapiCallId ? { vapiCallId: null } : {}),
+    });
     synced++;
   }
 

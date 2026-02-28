@@ -11,7 +11,7 @@ We don’t have real AutoTrader emails to test yet. This doc is for **how we’l
 | Step | What happens |
 |------|----------------|
 | **1. Connect lead source** | Dealer forwards AutoTrader enquiry to our designated mailbox. We receive the email. |
-| **2. Callback in 60 seconds** | We parse the email for: **advert/car link**, **lead name**, **phone number**. We ingest car + lead context, then place a call to the phone number (AI qualifies, answers FAQs, can book test drive). |
+| **2. Callback in ~30–60 seconds** | We parse the email for: **advert/car link**, **lead name**, **phone number**. We ingest car + lead context, then place a call to the phone number (AI qualifies, answers FAQs, can book test drive). *(Observed: ~34 seconds from email received to phone ringing.)* |
 | **3. Instant alert, email & calendar** | Call is recorded and transcribed. Results (transcript, recording link, captured data) are trackable back to the **dealer** in the back office. Dealer gets alert + detailed email (transcript, meeting details) + optional calendar invite. |
 
 So the system must:

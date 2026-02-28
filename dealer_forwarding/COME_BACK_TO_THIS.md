@@ -37,6 +37,8 @@
    `Link: https://www.autotrader.co.za/car-for-sale/...`  
    Then confirm: webhook runs → contact created → vehicle context fetched → call placed → result in dashboard.
 
+**Callback time (observed):** From email received to phone ringing is about **34 seconds** (webhook → parse → create contact → fetch vehicle HTML + Gemini → ensure assistant → place call).
+
 That’s enough for the feature to be **fully working for one dealer**: one project, one inbox, test emails and real forwards all go to that project.
 
 ---

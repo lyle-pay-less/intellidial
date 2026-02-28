@@ -390,20 +390,22 @@ export async function buildAssistantConfig(
     ],
   };
 
+  // Always enable recording so we get recording URLs from VAPI (independent of webhook)
+  payload.artifactPlan = { recordingEnabled: true };
+
   if (webhookUrl) {
     payload.server = { url: webhookUrl };
     payload.serverMessages = ["end-of-call-report"];
-    // VAPI artifactPlan: use recordingEnabled (recording: { enabled } is deprecated and rejected)
-    payload.artifactPlan = { recordingEnabled: true };
   } else if (forWebTest) {
     // Explicitly clear server so PATCH doesn't leave an old URL (which causes daily-error on web).
     (payload as Record<string, unknown>).server = null;
     (payload as Record<string, unknown>).serverMessages = null;
-    (payload as Record<string, unknown>).artifactPlan = null;
+    // Keep recordingEnabled even for web tests so recordings are captured
   }
   if (project.structuredOutputId?.trim() && !forWebTest) {
     payload.artifactPlan = {
-      ...(payload.artifactPlan ?? {}),
+      ...payload.artifactPlan,
+      ...payload.artifactPlan,
       structuredOutputIds: [project.structuredOutputId.trim()],
     };
   }
@@ -695,6 +697,7 @@ export type VapiCallResponse = {
   startedAt?: string | null;
   endedAt?: string | null;
   assistantId?: string | null;
+  customer?: { number?: string } | null;
   artifact?: {
     transcript?: string | null;
     /** VAPI may return recording as string, { url }, or { mono, stereo, video } */
@@ -702,21 +705,26 @@ export type VapiCallResponse = {
     structuredOutputs?: VapiStructuredOutputs | null;
   } | null;
 };
-
-/** VAPI recording can be: string URL, { url }, or { mono, stereo, video } URLs. */
+/** VAPI recording: string, { url }, { stereoUrl, mono: { combinedUrl } }, or { mono, stereo, video } URLs. */
 type RecordingShape =
   | string
-  | { url?: string | null }
-  | { mono?: string | null; stereo?: string | null; video?: string | null }
+  | { url?: string | null; stereoUrl?: string | null; mono?: string | { combinedUrl?: string | null } | null }
   | null
   | undefined;
 
-/** Extract recording URL from VAPI artifact (handles string, { url }, or { mono, stereo, video }). */
+/** Extract recording URL from VAPI artifact (handles all known VAPI shapes including stereoUrl and mono.combinedUrl). */
 export function getRecordingUrl(recording: RecordingShape): string | undefined {
   if (!recording) return undefined;
   if (typeof recording === "string" && recording.trim()) return recording.trim();
-  const o = recording as Record<string, string | null | undefined>;
-  const url = o.url ?? o.mono ?? o.stereo ?? o.video;
+  const o = recording as Record<string, unknown>;
+  let url: string | null | undefined =
+    (o.url as string) ?? (o.stereoUrl as string) ?? (o.stereo as string) ?? (o.video as string);
+  if (url == null && typeof o.mono === "object" && o.mono && !Array.isArray(o.mono)) {
+    const mono = o.mono as Record<string, string | null | undefined>;
+    url = mono.combinedUrl ?? mono.assistantUrl ?? mono.customerUrl;
+  }
+  if (url == null && typeof o.mono === "string") url = o.mono;
+  if (url == null) url = (o.url ?? o.mono ?? o.stereo ?? o.video) as string | null | undefined;
   return typeof url === "string" && url.trim() ? url.trim() : undefined;
 }
 
@@ -779,4 +787,35 @@ export async function getCall(callId: string): Promise<VapiCallResponse | null> 
     });
   }
   return data;
+}
+
+/** Minimal shape for list calls (used to match contacts that have no stored call ID). */
+export type VapiCallListItem = {
+  id: string;
+  assistantId?: string | null;
+  status?: string | null;
+  customer?: { number?: string } | null;
+};
+
+/**
+ * List recent calls from VAPI (for backfilling contacts that have no call ID stored).
+ * Returns up to limit ended calls, newest first.
+ */
+export async function listCalls(opts?: {
+  assistantId?: string;
+  limit?: number;
+}): Promise<VapiCallListItem[]> {
+  const params = new URLSearchParams();
+  if (opts?.assistantId) params.set("assistantId", opts.assistantId);
+  if (opts?.limit) params.set("limit", String(Math.min(opts.limit, 100)));
+  const qs = params.toString();
+  const url = `${VAPI_BASE}/call${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, { method: "GET", headers: getVapiHeaders() });
+  if (!res.ok) {
+    console.warn("[VAPI] listCalls error:", res.status, await res.text().catch(() => ""));
+    return [];
+  }
+  const data = await res.json();
+  const arr = Array.isArray(data) ? data : data?.calls ?? data?.data ?? [];
+  return (arr as VapiCallListItem[]).filter((c) => c?.id && c?.status === "ended").slice(0, opts?.limit ?? 50);
 }

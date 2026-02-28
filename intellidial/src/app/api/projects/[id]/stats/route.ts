@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getProject,
+  listContacts,
   getProjectStats,
   getProjectCallsByDayForChart,
   getProjectMinutesByDayForChart,
@@ -23,6 +24,8 @@ export async function GET(
   if (!project) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
+  // Hydrate contacts into store so getProjectStats sees real data (fixes first-load zeros when stats runs before /contacts).
+  await listContacts(id, { limit: 10000 });
   const stats = getProjectStats(id);
   const callsByDay = getProjectCallsByDayForChart(id);
   const minutesByDay = getProjectMinutesByDayForChart(id);

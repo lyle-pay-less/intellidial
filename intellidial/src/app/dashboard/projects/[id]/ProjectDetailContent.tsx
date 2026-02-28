@@ -135,16 +135,19 @@ export function ProjectDetailContent({ projectId, embedded, dealer }: { projectI
     [id, authHeaders]
   );
 
-  /** Run sync-calls once (fixes contacts stuck "calling") then refetch contacts. Call on project load and from Results tab. */
-  const syncCallsThenRefresh = useCallback(async () => {
-    if (!id || !user?.uid) return;
+  /** Run sync-calls once (fixes contacts stuck "calling") then refetch contacts. Returns synced count when ok. */
+  const syncCallsThenRefresh = useCallback(async (): Promise<number | undefined> => {
+    if (!id || !user?.uid) return undefined;
     try {
       const syncRes = await fetch(`/api/projects/${id}/sync-calls`, {
         headers: authHeaders,
       });
+      const data = syncRes.ok ? await syncRes.json().catch(() => ({})) : {};
+      const synced = typeof data.synced === "number" ? data.synced : undefined;
       if (syncRes.ok) await fetchContacts(0);
+      return synced;
     } catch {
-      // ignore
+      return undefined;
     }
   }, [id, authHeaders, fetchContacts]);
 
@@ -3956,13 +3959,14 @@ function ResultsTab({
 }: {
   contacts: ContactWithId[];
   project: ProjectWithId;
-  onSyncCalls?: () => Promise<void>;
+  onSyncCalls?: () => Promise<number | undefined>;
 }) {
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "success" | "failed">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [syncing, setSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const resultRows: ResultRow[] = useMemo(() => {
     const rows: ResultRow[] = [];
@@ -3974,7 +3978,12 @@ function ResultsTab({
             ? [{ ...c.callResult }]
             : [];
       for (const call of calls) {
-        rows.push({ contact: c, call });
+        // Prefer contact.callResult for recording/duration when row is missing (e.g. backfill updated callResult but not callHistory)
+        const hasGap = !(call.recordingUrl ?? "").trim() || (call.durationSeconds == null && (c.callResult?.durationSeconds ?? 0) > 0);
+        const merged = hasGap && c.callResult
+          ? { ...call, recordingUrl: call.recordingUrl || c.callResult.recordingUrl, durationSeconds: call.durationSeconds ?? c.callResult.durationSeconds }
+          : call;
+        rows.push({ contact: c, call: merged });
       }
     }
     rows.sort((a, b) => {
@@ -4031,21 +4040,37 @@ function ResultsTab({
           {filteredResultRows.length} of {resultRows.length} calls shown
         </span>
         {onSyncCalls && (
-          <button
-            type="button"
-            onClick={async () => {
-              setSyncing(true);
-              try {
-                await onSyncCalls();
-              } finally {
-                setSyncing(false);
-              }
-            }}
-            disabled={syncing}
-            className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
-          >
-            {syncing ? "Syncing…" : "Sync call status"}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={async () => {
+                setSyncFeedback(null);
+                setSyncing(true);
+                try {
+                  const synced = await onSyncCalls();
+                  if (synced !== undefined) {
+                    const msg =
+                      synced > 0
+                        ? `Synced ${synced} call(s). Results updated.`
+                        : "No calls needed updating.";
+                    setSyncFeedback(msg);
+                    setTimeout(() => setSyncFeedback(null), 5000);
+                  }
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+              disabled={syncing}
+              className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+            >
+              {syncing ? "Syncing…" : "Sync call status"}
+            </button>
+            {syncFeedback && (
+              <span className="text-sm text-slate-600" role="status">
+                {syncFeedback}
+              </span>
+            )}
+          </>
         )}
       </div>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

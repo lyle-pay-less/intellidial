@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
 import { parseEnquiryEmail } from "@/lib/dealer-forwarding/parse-email";
 import { runForwardedEnquiryPipeline } from "@/lib/dealer-forwarding/pipeline";
-import { listDealers, getFirstOrgIdIfSingle } from "@/lib/data/store";
+import { listDealers, getFirstOrgIdIfSingle, updateContact } from "@/lib/data/store";
 
 /**
  * POST /api/webhooks/resend/inbound
@@ -179,6 +179,9 @@ export async function POST(req: NextRequest) {
         emailId,
       }, { status: 502 });
     }
+
+    // Persist VAPI call ID and status so Sync call status can update the contact if webhook is missed
+    await updateContact(result.contactId, { vapiCallId: result.callId, status: "calling" });
 
     console.log("[Resend inbound] Call placed:", { callId: result.callId, contactId: result.contactId, emailId });
     return NextResponse.json({
