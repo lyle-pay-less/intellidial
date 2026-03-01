@@ -32,7 +32,7 @@ ENV NEXT_PUBLIC_CALENDLY_URL=$NEXT_PUBLIC_CALENDLY_URL
 RUN npm run build
 
 # Production image: use Playwright base for Chromium (bypasses 503 from AutoTrader)
-FROM mcr.microsoft.com/playwright:v1.58.2-noble AS runner
+FROM mcr.microsoft.com/playwright:v1.49.0-noble AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
