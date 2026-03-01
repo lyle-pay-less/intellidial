@@ -4,13 +4,14 @@
  * Result is stored by the existing call-ended webhook when the call finishes.
  *
  * SLA + vehicle context: see SLA_AND_VEHICLE_CONTEXT.md in this folder.
- * We use Playwright-first for full listing context (no heuristic fast path);
- * vehicle fetch is capped so we meet the callback SLA.
+ * Primary path: Gemini URL context (one API call, ~15-20s).
+ * Fallback: Playwright + Gemini extract (if URL context fails).
+ * createContact and vehicle fetch run in parallel to save time.
  */
 
 import { getProject, updateProject, createContacts, updateContact } from "@/lib/data/store";
 import { fetchVehicleListingHtml } from "@/lib/vehicle-listing/fetch-html";
-import { extractFullTextFromHtml, isGeminiConfigured } from "@/lib/gemini/client";
+import { extractFullTextFromHtml, extractVehicleContextFromUrl, isGeminiConfigured } from "@/lib/gemini/client";
 import { ensureProjectAssistantId } from "@/lib/vapi/ensureAssistant";
 import { createOutboundCall, getPhoneNumberIdForCall } from "@/lib/vapi/client";
 import type { ParsedEnquiry } from "./parse-email";
@@ -18,6 +19,42 @@ import type { ParsedEnquiry } from "./parse-email";
 export type PipelineResult =
   | { ok: true; callId: string; contactId: string }
   | { ok: false; error: string };
+
+/**
+ * Fetch vehicle context: try Gemini URL context first (fast, no browser).
+ * Falls back to Playwright + Gemini extract if URL context fails.
+ */
+async function fetchVehicleContext(
+  url: string,
+  timings: Record<string, number>
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  let t = Date.now();
+  const urlResult = await extractVehicleContextFromUrl(url);
+  timings.geminiUrlContext = Date.now() - t;
+  if (urlResult.ok) {
+    timings.vehicleContextMethod = 0; // 0 = Gemini URL context
+    console.log("[Pipeline] Gemini URL context succeeded in %dms", timings.geminiUrlContext);
+    return urlResult;
+  }
+  console.warn("[Pipeline] Gemini URL context failed in %dms: %s — falling back to Playwright", timings.geminiUrlContext, urlResult.error);
+
+  t = Date.now();
+  const fetchResult = await fetchVehicleListingHtml(url);
+  timings.fetchHtml = Date.now() - t;
+  if (!fetchResult.ok) {
+    return { ok: false, error: `Could not load listing: ${fetchResult.error}` };
+  }
+
+  t = Date.now();
+  const extractResult = await extractFullTextFromHtml(fetchResult.html);
+  timings.geminiExtract = Date.now() - t;
+  if (!extractResult.ok) {
+    return { ok: false, error: extractResult.error };
+  }
+  timings.vehicleContextMethod = 1; // 1 = Playwright + Gemini extract
+  console.log("[Pipeline] Playwright fallback succeeded in %dms (fetch: %dms, extract: %dms)", timings.fetchHtml + timings.geminiExtract, timings.fetchHtml, timings.geminiExtract);
+  return extractResult;
+}
 
 /**
  * Run the full pipeline for a forwarded enquiry.
@@ -42,16 +79,6 @@ export async function runForwardedEnquiryPipeline(
       return { ok: false, error: "Project has no orgId" };
     }
 
-    t = Date.now();
-    const created = await createContacts(projectId, [
-      { phone: enquiry.phone, name: enquiry.name, email: enquiry.email },
-    ], { skipDuplicates: true });
-    timings.createContact = Date.now() - t;
-    const contactId = created[0]?.id;
-    if (!contactId) {
-      return { ok: false, error: "Failed to create contact" };
-    }
-
     if (!isGeminiConfigured()) {
       return { ok: false, error: "Gemini is not configured (GEMINI_API_KEY)" };
     }
@@ -59,25 +86,28 @@ export async function runForwardedEnquiryPipeline(
       ? enquiry.vehicleLink
       : "https://" + enquiry.vehicleLink;
 
+    // Run createContact and vehicle context fetch in parallel (no dependency between them)
     t = Date.now();
-    const fetchResult = await fetchVehicleListingHtml(url);
-    timings.fetchHtml = Date.now() - t;
-    if (!fetchResult.ok) {
-      console.error("[Pipeline] fetchHtml failed after %dms: %s", timings.fetchHtml, fetchResult.error, { timings });
-      return { ok: false, error: `Could not load listing: ${fetchResult.error}` };
-    }
+    const [contactResult, vehicleResult] = await Promise.all([
+      createContacts(projectId, [
+        { phone: enquiry.phone, name: enquiry.name, email: enquiry.email },
+      ], { skipDuplicates: true }),
+      fetchVehicleContext(url, timings),
+    ]);
+    timings.createContact = Date.now() - t;
 
-    t = Date.now();
-    const extractResult = await extractFullTextFromHtml(fetchResult.html);
-    timings.geminiExtract = Date.now() - t;
-    if (!extractResult.ok) {
-      console.error("[Pipeline] geminiExtract failed after %dms: %s", timings.geminiExtract, extractResult.error, { timings });
-      return { ok: false, error: extractResult.error };
+    const contactId = contactResult[0]?.id;
+    if (!contactId) {
+      return { ok: false, error: "Failed to create contact" };
+    }
+    if (!vehicleResult.ok) {
+      console.error("[Pipeline] vehicle context failed — timings: %o", timings);
+      return { ok: false, error: vehicleResult.error };
     }
 
     t = Date.now();
     await updateProject(projectId, {
-      vehicleContextFullText: extractResult.text,
+      vehicleContextFullText: vehicleResult.text,
       vehicleContextUpdatedAt: new Date().toISOString(),
     });
     timings.updateProject = Date.now() - t;
