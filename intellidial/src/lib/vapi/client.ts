@@ -128,7 +128,7 @@ type VapiCallPayload = {
   customer: { number: string; name?: string };
   assistantOverrides?: {
     variableValues?: Record<string, string>;
-    model?: { messages: Array<{ role: "system"; content: string }> };
+    model?: { provider: string; model: string; messages: Array<{ role: "system"; content: string }> };
   };
 };
 
@@ -648,7 +648,7 @@ export async function createOutboundCall(params: {
     },
   };
   if (systemPrompt) {
-    overrides.model = { messages: [{ role: "system", content: systemPrompt }] };
+    overrides.model = { provider: "openai", model: "gpt-4o-mini", messages: [{ role: "system", content: systemPrompt }] };
   }
 
   const payload: VapiCallPayload = {
