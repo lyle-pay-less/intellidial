@@ -17,6 +17,7 @@ type Dealer = {
   contextLinks?: Array<{ url: string; label?: string | null }> | null;
   projectId?: string | null;
   forwardingEmail?: string | null;
+  callUpdatesEmail?: string | null;
 };
 
 export default function DealerConfigPage() {

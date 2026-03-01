@@ -78,6 +78,8 @@ export type ProjectDoc = {
   businessContext?: string | null;
   agentInstructions?: string | null;
   notifyOnComplete?: boolean;
+  /** Email to send call summary to when a call concludes (dealer/back office). */
+  emailUpdate?: string | null;
   /** Enable post-call survey; recipient can give feedback */
   surveyEnabled?: boolean;
   /** Call window start (HH:mm), e.g. "09:00" */
@@ -142,6 +144,8 @@ export type DealerDoc = {
   email?: string | null;
   /** Email to link enquiries back to this dealership (e.g. the address that forwards to leads@ so we know which dealer the lead came from). */
   forwardingEmail?: string | null;
+  /** Email to receive call summary updates (transcript, booking status) when calls complete for this dealer's project. */
+  callUpdatesEmail?: string | null;
   /** Multiple URLs for dealer context (e.g. dealer site, AutoTrader). */
   contextLinks?: DealerContextLink[] | null;
   /** Linked project id (project has dealerId = this dealer's id). Opening dealer opens this project. */
@@ -155,7 +159,7 @@ export type ContactDoc = {
   projectId: string;
   phone: string;
   name?: string | null;
-  /** Enquirer's email (from forwarded enquiry). */
+  /** Enquirer's email (e.g. from forwarded enquiry). */
   email?: string | null;
   /** Do-not-call: set when contact opts out (POPIA / compliance). Skip when starting calls. */
   optOut?: boolean | null;

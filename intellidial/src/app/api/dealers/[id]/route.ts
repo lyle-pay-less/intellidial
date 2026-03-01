@@ -36,7 +36,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
   const updates: Record<string, unknown> = {};
-  const keys = ["name", "address", "phoneNumber", "operationHours", "email", "addressPronunciationNotes", "contextLinks", "forwardingEmail"] as const;
+  const keys = ["name", "address", "phoneNumber", "operationHours", "email", "addressPronunciationNotes", "contextLinks", "forwardingEmail", "callUpdatesEmail"] as const;
   for (const key of keys) {
     if (body[key] !== undefined) updates[key] = body[key];
   }

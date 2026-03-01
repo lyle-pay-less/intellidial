@@ -7,6 +7,7 @@ import {
 } from "@/lib/data/store";
 import { getOrgFromRequest } from "../../getOrgFromRequest";
 import { getCall, listCalls, mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
+import { enrichCapturedDataWithTranscriptFallback } from "@/lib/utils/infer-booking-from-transcript";
 
 /** Normalize phone for matching (same as call-ended webhook). */
 function normalizePhone(raw: string): string {
@@ -221,10 +222,17 @@ export async function GET(
     const isFailed = FAILED_END_REASONS.has(endedReason) || neverActuallyDialed;
 
     const captureFieldKeys = (project.captureFields ?? []).map((f) => f.key).filter(Boolean);
-    const capturedData = mapStructuredOutputsToCapturedData(
+    let capturedData = mapStructuredOutputsToCapturedData(
       call.artifact?.structuredOutputs,
       captureFieldKeys
     );
+    if (!isFailed && call.artifact?.transcript?.trim()) {
+      capturedData =
+        (await enrichCapturedDataWithTranscriptFallback(
+          call.artifact.transcript,
+          capturedData
+        )) ?? capturedData;
+    }
     let failureReason: string | undefined;
     if (isFailed) {
       if (neverActuallyDialed) {
@@ -357,11 +365,15 @@ export async function GET(
         : contact.callResult?.durationSeconds ?? 0;
     const recordingUrl = getRecordingUrl(call.artifact?.recording) ?? contact.callResult?.recordingUrl;
     const transcript = call.artifact?.transcript ?? contact.callResult?.transcript;
-    const capturedData =
+    let capturedData =
       mapStructuredOutputsToCapturedData(
         call.artifact?.structuredOutputs,
         captureFieldKeysAll
       ) ?? contact.callResult?.capturedData;
+    if (transcript?.trim()) {
+      capturedData =
+        (await enrichCapturedDataWithTranscriptFallback(transcript, capturedData)) ?? capturedData;
+    }
     const attemptedAt =
       call.endedAt ?? call.startedAt ?? contact.callResult?.attemptedAt ?? new Date().toISOString();
     const endedReason = call.endedReason ?? contact.callResult?.endedReason;

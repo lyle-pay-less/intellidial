@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { Webhook } from "svix";
 import { parseEnquiryEmail } from "@/lib/dealer-forwarding/parse-email";
 import { runForwardedEnquiryPipeline } from "@/lib/dealer-forwarding/pipeline";
@@ -7,15 +8,10 @@ import { listDealers, getFirstOrgIdIfSingle, updateContact } from "@/lib/data/st
 /**
  * POST /api/webhooks/resend/inbound
  *
- * Resend sends this when an email is received at an inbound address (e.g. leads@ulkieyen.resend.app).
- * Event type: email.received
- * Payload does NOT include body — we must call Resend API to get full email (subject, html, text).
- *
- * If RESEND_WEBHOOK_SECRET is set, the request is verified using the Resend webhook signing secret (Svix).
- * Use the raw request body for verification; do not parse as JSON before verifying.
- *
- * Task 1–2: Receive, fetch body, run only when subject contains "AutoTrader".
- * Task 3–7: Parse name/phone/link, create contact, fetch vehicle context, update project, place call.
+ * CRITICAL FOR 60s SLA: Return 200 to Resend immediately after validation.
+ * The heavy pipeline (Playwright + Gemini + VAPI ~40-60s) runs via next/server after()
+ * so the runtime keeps CPU allocated while we process in the background.
+ * Without this, Resend retries on timeout with backoff up to 2 hours.
  */
 
 type ResendInboundEvent = {
@@ -29,7 +25,6 @@ type ResendInboundEvent = {
   };
 };
 
-/** Fetch full received email from Resend API (SDK may not expose receiving). */
 async function fetchReceivedEmail(emailId: string, apiKey: string) {
   const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
     method: "GET",
@@ -54,7 +49,29 @@ async function fetchReceivedEmail(emailId: string, apiKey: string) {
   }>;
 }
 
+/**
+ * Background pipeline: run after response is sent. Uses after() so the
+ * runtime keeps CPU allocated (Cloud Run won't throttle after response).
+ */
+function schedulePipelineAfterResponse(projectId: string, enquiry: Parameters<typeof runForwardedEnquiryPipeline>[1], emailId: string) {
+  after(async () => {
+    const start = Date.now();
+    try {
+      const result = await runForwardedEnquiryPipeline(projectId, enquiry);
+      if (!result.ok) {
+        console.error("[Resend inbound] Pipeline failed after %dms: %s (emailId=%s)", Date.now() - start, result.error, emailId);
+        return;
+      }
+      await updateContact(result.contactId, { vapiCallId: result.callId, status: "calling" });
+      console.log("[Resend inbound] Call placed in %dms: callId=%s contactId=%s emailId=%s", Date.now() - start, result.callId, result.contactId, emailId);
+    } catch (e) {
+      console.error("[Resend inbound] Background pipeline error after %dms (emailId=%s):", Date.now() - start, emailId, e);
+    }
+  });
+}
+
 export async function POST(req: NextRequest) {
+  const webhookReceivedAt = Date.now();
   try {
     const rawBody = await req.text();
     const webhookSecret = process.env.RESEND_WEBHOOK_SECRET?.trim();
@@ -109,20 +126,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Fetch full email body (subject, html, text) — webhook only gives metadata
+    // Fetch full email body — this is fast (Resend API, ~200ms)
     const email = await fetchReceivedEmail(emailId, apiKey);
     const subject = (email?.subject ?? "").trim();
     const text = email?.text ?? "";
     const html = email?.html ?? "";
 
-    // Task 2: Only run automation when subject contains "AutoTrader"
     const shouldRun = /autotrader/i.test(subject);
     if (!shouldRun) {
       console.log("[Resend inbound] Subject does not contain AutoTrader, skipping:", subject);
       return NextResponse.json({ ok: true, skipped: "subject not AutoTrader" });
     }
 
-    // Task 3: Parse body for name, contact number, vehicle link
     const enquiry = parseEnquiryEmail(text, html);
     if (!enquiry) {
       console.warn("[Resend inbound] Could not parse name/phone/link from body");
@@ -132,14 +147,13 @@ export async function POST(req: NextRequest) {
         emailId,
       }, { status: 400 });
     }
-    // Add sender email (from metadata)
     const fromRaw = (email?.from ?? "").trim();
     if (fromRaw) {
       const match = fromRaw.match(/<([^>]+)>/);
       enquiry.email = match ? match[1].trim() : fromRaw;
     }
 
-    // One org owns all dealers (single-tenant). Resolve project by dealer Forwarding email.
+    // Resolve project by dealer forwarding email
     const rawTo = body.data?.to ?? email?.to ?? [];
     const toAddresses = (Array.isArray(rawTo) ? rawTo : [rawTo])
       .filter((t): t is string => typeof t === "string")
@@ -175,28 +189,20 @@ export async function POST(req: NextRequest) {
       }, { status: 503 });
     }
 
-    // Tasks 4–7: Create contact, fetch vehicle context, update project, place call (result stored by call-ended webhook)
-    const result = await runForwardedEnquiryPipeline(projectId, enquiry);
-    if (!result.ok) {
-      console.error("[Resend inbound] Pipeline failed:", result.error);
-      return NextResponse.json({
-        ok: false,
-        error: result.error,
-        emailId,
-      }, { status: 502 });
-    }
+    const validationMs = Date.now() - webhookReceivedAt;
+    console.log("[Resend inbound] Validated in %dms — launching pipeline in background (emailId=%s, phone=%s)", validationMs, emailId, enquiry.phone);
 
-    // Persist VAPI call ID and status so Sync call status can update the contact if webhook is missed
-    await updateContact(result.contactId, { vapiCallId: result.callId, status: "calling" });
+    // Schedule pipeline to run AFTER response is sent (via next/server after()).
+    // This ensures we return 200 to Resend within milliseconds while the
+    // runtime keeps CPU allocated for the pipeline (~40-60s for Playwright + Gemini + VAPI).
+    schedulePipelineAfterResponse(projectId, enquiry, emailId);
 
-    console.log("[Resend inbound] Call placed:", { callId: result.callId, contactId: result.contactId, emailId });
     return NextResponse.json({
       ok: true,
       emailId,
       subject,
       triggered: true,
-      callId: result.callId,
-      contactId: result.contactId,
+      validationMs,
     });
   } catch (e) {
     console.error("[Resend inbound] Error:", e);

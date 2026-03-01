@@ -100,7 +100,10 @@ type DealerForSetup = {
   contextLinks?: Array<{ url: string; label?: string | null }> | null;
   /** Email to link enquiries back to this dealership (e.g. address that forwards to leads@). */
   forwardingEmail?: string | null;
+  /** Email to receive call summary updates when calls complete. */
+  callUpdatesEmail?: string | null;
 };
+
 
 export function ProjectDetailContent({ projectId, embedded, dealer }: { projectId: string; embedded?: boolean; dealer?: DealerForSetup | null }) {
   const { user } = useAuth();
@@ -2572,6 +2575,7 @@ function InstructionsTab({
   );
   const [surveyEnabled, setSurveyEnabled] = useState(project.surveyEnabled ?? false);
   const [surveyAcknowledged, setSurveyAcknowledged] = useState(false);
+  const [emailUpdate, setEmailUpdate] = useState(project.emailUpdate ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -2588,6 +2592,7 @@ function InstructionsTab({
   const [dealerEmail, setDealerEmail] = useState("");
   const [dealerAddressPronunciationNotes, setDealerAddressPronunciationNotes] = useState("");
   const [dealerForwardingEmail, setDealerForwardingEmail] = useState("");
+  const [dealerCallUpdatesEmail, setDealerCallUpdatesEmail] = useState("");
   const [dealerSaving, setDealerSaving] = useState(false);
   const [dealerSaveSuccess, setDealerSaveSuccess] = useState(false);
   const [dealerError, setDealerError] = useState<string | null>(null);
@@ -2601,6 +2606,7 @@ function InstructionsTab({
       setDealerEmail(dealer.email ?? "");
       setDealerAddressPronunciationNotes((dealer as { addressPronunciationNotes?: string | null }).addressPronunciationNotes ?? "");
       setDealerForwardingEmail(dealer.forwardingEmail ?? "");
+      setDealerCallUpdatesEmail(dealer.callUpdatesEmail ?? "");
     }
   }, [dealer?.id]);
 
@@ -2639,7 +2645,8 @@ function InstructionsTab({
     setBusinessContextHeaderInstructions((project as ProjectWithId & { effectiveBusinessContextHeaderInstructions?: string }).effectiveBusinessContextHeaderInstructions ?? "");
     setAgentInstructions(project.agentInstructions ?? "");
     setSurveyEnabled(project.surveyEnabled ?? false);
-  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.agentImageUrl, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.businessContext, project.dealershipEnabled, project.vehicleListingUrl, project.vehicleContextUpdatedAt, project.agentInstructions, project.surveyEnabled, project.updatedAt, orgName]);
+    setEmailUpdate(project.emailUpdate ?? "");
+  }, [project.id, project.agentName, project.agentCompany, project.agentNumber, project.agentPhoneNumberId, project.agentVoice, project.agentImageUrl, project.goal, project.industry, project.tone, project.agentQuestions, project.captureFields, project.businessContext, project.dealershipEnabled, project.vehicleListingUrl, project.vehicleContextUpdatedAt, project.agentInstructions, project.surveyEnabled, project.emailUpdate, project.updatedAt, orgName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2892,6 +2899,7 @@ function InstructionsTab({
           captureFields,
           agentInstructions: agentInstructions.trim() || null,
           surveyEnabled,
+          emailUpdate: emailUpdate.trim() || null,
           dealershipEnabled,
           vehicleListingUrl: vehicleListingUrl.trim() || null,
           callContextInstructions: callContextInstructions.trim() || null,
@@ -2951,6 +2959,7 @@ function InstructionsTab({
           email: dealerEmail.trim() || null,
           addressPronunciationNotes: dealerAddressPronunciationNotes.trim() || null,
           forwardingEmail: dealerForwardingEmail.trim() || null,
+          callUpdatesEmail: dealerCallUpdatesEmail.trim() || null,
         }),
       });
       const data = await res.json();
@@ -3161,6 +3170,17 @@ function InstructionsTab({
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
               />
               <p className="mt-1 text-xs text-slate-500">The email address that forwards to leads@ so we can link incoming enquiries to this dealership.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Call updates email</label>
+              <input
+                type="email"
+                value={dealerCallUpdatesEmail}
+                onChange={(e) => setDealerCallUpdatesEmail(e.target.value)}
+                placeholder="e.g. sales@dealer.co.za"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+              />
+              <p className="mt-1 text-xs text-slate-500">Send call summary emails (transcript, booking status) to this address when calls complete. Ensures the right person at the dealership gets updates.</p>
             </div>
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-700 mb-1">Address pronunciation notes</label>
@@ -3930,6 +3950,26 @@ function InstructionsTab({
             </p>
           </div>
         </label>
+      </div>
+
+      {/* Email update — call summary emails to dealer */}
+      <div className="rounded-2xl border-2 border-slate-200 bg-white p-6 shadow-sm">
+        <label className="mb-2 block font-display text-sm font-semibold text-slate-900">
+          Email update
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          When a call concludes, send a summary email to this address. Subject: &quot;Congratulations another viewing booked!&quot; or &quot;Successful call made client serviced&quot;. Includes client name, phone, email, call summary, and recording link.
+        </p>
+        <input
+          type="email"
+          value={emailUpdate}
+          onChange={(e) => {
+            setEmailUpdate(e.target.value);
+            setSaved(false);
+          }}
+          placeholder="e.g. dealer@example.com"
+          className="w-full max-w-md rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 outline-none"
+        />
       </div>
 
       {/* Agent script */}

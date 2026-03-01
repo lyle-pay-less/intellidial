@@ -401,9 +401,10 @@ function getProjectMinutesByDay(projectId: string): Array<{ date: string; minute
   const ids = projectContacts.get(projectId) ?? [];
   for (const cid of ids) {
     const c = contacts.get(cid);
-    if (!c?.callResult?.attemptedAt || !c.callResult.durationSeconds) continue;
-    const date = c.callResult.attemptedAt.slice(0, 10);
-    const mins = Math.round(c.callResult.durationSeconds / 60);
+    const entry = c?.callResult ?? c?.callHistory?.at(-1);
+    if (!entry?.attemptedAt || !(entry.durationSeconds ?? 0)) continue;
+    const date = entry.attemptedAt.slice(0, 10);
+    const mins = Math.round((entry.durationSeconds ?? 0) / 60);
     byDay.set(date, (byDay.get(date) ?? 0) + mins);
   }
   return Array.from(byDay.entries())
@@ -942,6 +943,7 @@ function dealerFromFirestoreDoc(docId: string, d: Record<string, unknown>, orgId
     contextLinks: contextLinks ?? null,
     projectId: (d.projectId as string | null) ?? null,
     forwardingEmail: (d.forwardingEmail as string | null) ?? null,
+    callUpdatesEmail: (d.callUpdatesEmail as string | null) ?? null,
     createdAt: (d.createdAt as string) ?? now(),
     updatedAt: (d.updatedAt as string) ?? now(),
   };
@@ -1043,7 +1045,7 @@ export async function createDealer(data: {
 
 export async function updateDealer(
   id: string,
-  data: Partial<Pick<DealerDoc, "name" | "address" | "phoneNumber" | "operationHours" | "email" | "addressPronunciationNotes" | "contextLinks" | "projectId" | "forwardingEmail">>
+  data: Partial<Pick<DealerDoc, "name" | "address" | "phoneNumber" | "operationHours" | "email" | "addressPronunciationNotes" | "contextLinks" | "projectId" | "forwardingEmail" | "callUpdatesEmail">>
 ): Promise<DealerWithId | null> {
   let dealer = dealers.get(id) ?? null;
   if (!dealer && isFirebaseAdminConfigured()) {
@@ -1283,30 +1285,32 @@ export async function createContacts(
     seen.add(phone);
 
     if (skipDuplicates && db) {
-      const existingSnap = await db
-        .collection(COLLECTIONS.contacts)
-        .where("projectId", "==", projectId)
-        .where("phone", "==", phone)
-        .limit(1)
-        .get();
-      if (!existingSnap.empty) {
-        const doc = existingSnap.docs[0];
-        const existingContact = { id: doc.id, ...doc.data() } as ContactWithId;
-        created.push(existingContact);
+      const forms = equivalentPhoneForms(phone);
+      let found: ContactWithId | null = null;
+      for (const form of forms) {
+        const existingSnap = await db
+          .collection(COLLECTIONS.contacts)
+          .where("projectId", "==", projectId)
+          .where("phone", "==", form)
+          .limit(1)
+          .get();
+        if (!existingSnap.empty) {
+          const doc = existingSnap.docs[0];
+          found = { id: doc.id, ...doc.data() } as ContactWithId;
+          break;
+        }
+      }
+      if (found) {
+        created.push(found);
         continue;
       }
     } else if (skipDuplicates) {
       await listContacts(projectId, { limit: 10000 });
       const existingIds = projectContacts.get(projectId) ?? [];
-      const norm = (p: string) => {
-        let s = p.replace(/\s/g, "");
-        if (s.startsWith("0") && s.length >= 10) s = "+27" + s.slice(1);
-        else if (!s.startsWith("+") && s.length >= 10) s = "+27" + s;
-        return s;
-      };
+      const forms = new Set(equivalentPhoneForms(phone));
       const existingContact = existingIds
         .map((cid) => contacts.get(cid))
-        .find((c) => c && norm(c.phone) === norm(phone));
+        .find((c) => c && (forms.has(normalizePhoneForContact(c.phone)) || forms.has(c.phone)));
       if (existingContact) {
         created.push(existingContact);
         continue;
@@ -1344,11 +1348,29 @@ export async function createContacts(
   return created;
 }
 
+/** Normalize SA phone to canonical +27xxxxxxxxx. Handles +0844... (typo), 0xx..., 27xx.... */
 function normalizePhoneForContact(raw: string): string {
   let s = raw.replace(/\s/g, "").trim();
-  if (s.startsWith("0") && s.length >= 10) s = "+27" + s.slice(1);
+  if (!s || s.length < 10) return s;
+  // +0844... or +086... (common SA typo: +27 typed as +084)
+  if (s.startsWith("+0") && s.length >= 11) s = "+27" + s.slice(2);
+  else if (s.startsWith("0") && s.length >= 10) s = "+27" + s.slice(1);
+  else if (s.startsWith("27") && s.length >= 11 && !s.startsWith("+")) s = "+" + s;
   else if (!s.startsWith("+") && s.length >= 10) s = "+27" + s;
   return s;
+}
+
+/** Return equivalent phone forms for duplicate check (canonical + alternates we might find in DB). */
+function equivalentPhoneForms(normalizedPhone: string): string[] {
+  if (!normalizedPhone) return [];
+  const forms = new Set<string>([normalizedPhone]);
+  if (normalizedPhone.startsWith("+27") && normalizedPhone.length >= 12) {
+    forms.add("0" + normalizedPhone.slice(3));
+    forms.add("+0" + normalizedPhone.slice(2)); // +0844050294 (common SA typo)
+  } else if (normalizedPhone.startsWith("0") && normalizedPhone.length >= 11) {
+    forms.add("+27" + normalizedPhone.slice(1));
+  }
+  return Array.from(forms);
 }
 
 const MOCK_TRANSCRIPTS = [

@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
       existingHubSpotIds.add(mapped.hubspotContactId);
     }
 
-    // Create contacts in Intellidial project
-    const created = await createContacts(projectId, contactsToAdd);
+    // Create contacts in Intellidial project (skipDuplicates in case of format mismatches)
+    const created = await createContacts(projectId, contactsToAdd, { skipDuplicates: true });
 
     const skipped = skippedNoPhone + skippedDuplicates;
 

@@ -144,3 +144,94 @@ export async function sendContactEmail(
   }
   console.log(`[Email] Contact form sent to ${CONTACT_TO_EMAIL}: ${data?.id}`);
 }
+
+export type CallSummaryEmailParams = {
+  to: string;
+  projectName: string;
+  isBooking: boolean;
+  clientName: string;
+  clientPhone: string;
+  clientEmail?: string | null;
+  durationSeconds?: number;
+  transcript?: string | null;
+  recordingUrl?: string | null;
+  whyNotBooked?: string | null;
+};
+
+/**
+ * Send call summary email to dealer when a call concludes.
+ * Subject: "Congratulations another viewing booked!" or "Successful call made client serviced"
+ */
+export async function sendCallSummaryEmail(params: CallSummaryEmailParams): Promise<void> {
+  const {
+    to,
+    projectName,
+    isBooking,
+    clientName,
+    clientPhone,
+    clientEmail,
+    durationSeconds = 0,
+    transcript,
+    recordingUrl,
+    whyNotBooked,
+  } = params;
+
+  const subject = isBooking
+    ? "Congratulations another viewing booked!"
+    : "Successful call made client serviced";
+
+  const durationStr =
+    durationSeconds > 0
+      ? `${Math.floor(durationSeconds / 60)}m ${durationSeconds % 60}s`
+      : "—";
+
+  const transcriptSnippet =
+    transcript && transcript.trim()
+      ? transcript.length > 1500
+        ? transcript.slice(0, 1500) + "\n\n[... transcript truncated ...]"
+        : transcript
+      : "No transcript available.";
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #334155; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="text-align: center; margin-bottom: 24px;">
+    <h1 style="color: #14b8a6; font-size: 24px; margin: 0;">${isBooking ? "🎉 Viewing booked!" : "✓ Client serviced"}</h1>
+  </div>
+  <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+    <h2 style="font-size: 16px; margin: 0 0 12px 0; color: #0f172a;">Contact details</h2>
+    <p style="margin: 4px 0;"><strong>Name:</strong> ${(clientName || "—").replace(/</g, "&lt;")}</p>
+    <p style="margin: 4px 0;"><strong>Phone:</strong> ${(clientPhone || "—").replace(/</g, "&lt;")}</p>
+    <p style="margin: 4px 0;"><strong>Email:</strong> ${(clientEmail && clientEmail.trim()) ? clientEmail.replace(/</g, "&lt;") : "—"}</p>
+    <p style="margin: 4px 0;"><strong>Duration:</strong> ${durationStr}</p>
+    <p style="margin: 4px 0;"><strong>Project:</strong> ${(projectName || "—").replace(/</g, "&lt;")}</p>
+    ${whyNotBooked && !isBooking ? `<p style="margin: 4px 0;"><strong>Why test drive not booked:</strong> ${String(whyNotBooked).replace(/</g, "&lt;")}</p>` : ""}
+  </div>
+  <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+    <h2 style="font-size: 16px; margin: 0 0 12px 0; color: #0f172a;">Call summary</h2>
+    <pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; margin: 0; max-height: 300px; overflow-y: auto;">${transcriptSnippet.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre>
+  </div>
+  ${recordingUrl ? `<p style="margin: 0 0 8px 0;"><a href="${recordingUrl.replace(/"/g, "&quot;")}" style="color: #14b8a6;">Listen to recording</a></p>` : ""}
+  <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">Intellidial — AI-powered call follow-up</p>
+</body>
+</html>
+  `;
+
+  const resend = getResendClient();
+  const from = process.env.RESEND_FROM_EMAIL || "Intellidial <onboarding@resend.dev>";
+
+  const { data, error } = await resend.emails.send({
+    from,
+    to: [to],
+    subject,
+    html,
+  });
+
+  if (error) {
+    console.error("[Email] Call summary error:", error);
+    throw new Error(`Resend API error: ${JSON.stringify(error)}`);
+  }
+  console.log(`[Email] Call summary sent to ${to}: ${data?.id}`);
+}

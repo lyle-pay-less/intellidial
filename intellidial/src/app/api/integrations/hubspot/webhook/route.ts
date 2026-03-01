@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
           hubspotContactId: mapped.hubspotContactId,
           hubspotLeadStatus: mapped.hubspotLeadStatus,
         },
-      ]);
+      ], { skipDuplicates: true });
       if (created.length === 0) {
         return NextResponse.json(
           { error: "Failed to create contact (duplicate phone?)" },

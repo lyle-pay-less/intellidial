@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getProjectByAssistantId,
+  getDealer,
   listContacts,
   updateContact,
   incrementOrgUsage,
@@ -8,6 +9,9 @@ import {
 } from "@/lib/data/store";
 import { mapStructuredOutputsToCapturedData, getRecordingUrl } from "@/lib/vapi/client";
 import { syncCallResultToHubSpot } from "@/lib/integrations/hubspot/sync";
+import { sendCallSummaryEmail } from "@/lib/email/resend";
+import { isCallBooking, getWhyNotBooked } from "@/lib/utils/call-stats";
+import { enrichCapturedDataWithTranscriptFallback } from "@/lib/utils/infer-booking-from-transcript";
 
 /** VAPI end-of-call-report webhook body shape (subset we use). */
 type VapiEndOfCallPayload = {
@@ -109,10 +113,18 @@ export async function POST(req: NextRequest) {
     const isFailed = FAILED_END_REASONS.has(endedReason.toLowerCase());
 
     const captureFieldKeys = (project.captureFields ?? []).map((f) => f.key).filter(Boolean);
-    const capturedData = mapStructuredOutputsToCapturedData(
+    let capturedData = mapStructuredOutputsToCapturedData(
       artifact?.structuredOutputs,
       captureFieldKeys
     );
+    // Fallback: if structured output didn't capture a booking but transcript shows customer said yes, infer it
+    if (!isFailed && artifact?.transcript?.trim()) {
+      capturedData =
+        (await enrichCapturedDataWithTranscriptFallback(
+          artifact.transcript,
+          capturedData
+        )) ?? capturedData;
+    }
     const recordingUrl = getRecordingUrl(artifact?.recording);
     if (!recordingUrl && !isFailed && artifact) {
       console.warn("[Webhook] call-ended: no recording URL in artifact (callId=%s); try Sync call status later to backfill.", call.id);
@@ -153,6 +165,34 @@ export async function POST(req: NextRequest) {
       } catch (hubspotError) {
         // Don't fail webhook if HubSpot sync fails - log and continue
         console.error("[Webhook] HubSpot sync failed:", hubspotError);
+      }
+    }
+
+    // Send call summary email when configured (successful calls only).
+    // For dealer projects: use dealer's callUpdatesEmail; else use project.emailUpdate.
+    let emailUpdate = project.emailUpdate?.trim();
+    if (project.dealerId && project.orgId) {
+      const dealer = await getDealer(project.dealerId, project.orgId);
+      const dealerCallUpdates = (dealer as { callUpdatesEmail?: string | null })?.callUpdatesEmail?.trim();
+      if (dealerCallUpdates) emailUpdate = dealerCallUpdates;
+    }
+    if (!isFailed && emailUpdate) {
+      try {
+        const capturedData = callResult.capturedData;
+        await sendCallSummaryEmail({
+          to: emailUpdate,
+          projectName: project.name,
+          isBooking: isCallBooking(capturedData),
+          clientName: contact.name ?? "",
+          clientPhone: contact.phone,
+          clientEmail: contact.email,
+          durationSeconds,
+          transcript: callResult.transcript,
+          recordingUrl: callResult.recordingUrl,
+          whyNotBooked: getWhyNotBooked(capturedData, project.captureFields) || undefined,
+        });
+      } catch (emailError) {
+        console.error("[Webhook] Call summary email failed:", emailError);
       }
     }
 
