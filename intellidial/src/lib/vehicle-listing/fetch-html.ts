@@ -65,55 +65,47 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
         waitUntil: "domcontentloaded",
         timeout: VEHICLE_FETCH_SLA_MS,
       });
-      // Minimal waits tuned for 60s callback SLA (domcontentloaded + cookie + specs)
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 500));
       try {
         const cookieBtn = page.getByRole("button", { name: /accept|agree|allow all|i accept|cookies/i }).first();
-        await cookieBtn.click({ timeout: 2000 });
-        await new Promise((r) => setTimeout(r, 300));
+        await cookieBtn.click({ timeout: 1000 });
       } catch {
         // No cookie button — continue
       }
       await page.evaluate(() => window.scrollBy(0, 600));
-      await new Promise((r) => setTimeout(r, 400));
       try {
-        // Open specs: match common phrases so we don't miss sites that use different wording
         const specBtn = page.locator('a, button').filter({
           hasText: /detailed specifications|view (full )?specs?|specifications?|tech specs?|full specs?/i,
         }).first();
-        await specBtn.click({ timeout: 3000 });
-        await new Promise((r) => setTimeout(r, 1500));
-        // Expand all spec sections: discover from page first (no hardcoded labels — sites differ)
+        await specBtn.click({ timeout: 1500 });
+        await new Promise((r) => setTimeout(r, 600));
+        // Expand all spec sections via role="tab" in a single evaluate (no round-trips)
         const tabsClicked = await page.evaluate(() => {
           const tabs = document.querySelectorAll('[role="tab"]');
           let clicked = 0;
           tabs.forEach((el, i) => {
             if (i > 25) return;
-            const t = el as HTMLElement;
-            if (t.offsetParent && !t.getAttribute('aria-selected')) {
-              t.click();
-              clicked++;
-            }
+            (el as HTMLElement).click();
+            clicked++;
           });
           return clicked;
         });
-        await new Promise((r) => setTimeout(r, tabsClicked > 0 ? 400 : 0));
-        // Fallback: click by common section labels only when page doesn't use role="tab"
         if (tabsClicked === 0) {
-          const sectionLabels = ["General", "Engine", "Handling", "Comfort", "Technology", "Safety", "Exterior", "Interior", "Performance", "Warranty"];
-          for (const label of sectionLabels) {
-            try {
-              const sectionBtn = page.locator('button, a, [role="button"], [role="tab"]').filter({ hasText: new RegExp(`\\b${label}\\b`, "i") }).first();
-              await sectionBtn.click({ timeout: 800 });
-              await new Promise((r) => setTimeout(r, 150));
-            } catch {
-              // Section not found — skip
+          // Fallback: click common section labels in a single evaluate (avoids per-label round-trips)
+          await page.evaluate(() => {
+            const labels = ["General", "Engine", "Handling", "Comfort", "Technology", "Safety", "Exterior", "Interior", "Performance", "Warranty"];
+            for (const label of labels) {
+              const re = new RegExp("\\b" + label + "\\b", "i");
+              const els = document.querySelectorAll('button, a, [role="button"], [role="tab"]');
+              for (const el of els) {
+                if (re.test(el.textContent ?? "")) { (el as HTMLElement).click(); break; }
+              }
             }
-          }
+          });
         }
-        await new Promise((r) => setTimeout(r, 400));
+        await new Promise((r) => setTimeout(r, 300));
         await page.evaluate(() => window.scrollBy(0, 2000));
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 300));
       } catch {
         // No spec button — keep initial content
       }

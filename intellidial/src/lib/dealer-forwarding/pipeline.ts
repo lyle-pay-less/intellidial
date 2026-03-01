@@ -1,19 +1,23 @@
 /**
  * Pipeline: take parsed enquiry (name, phone, vehicle link) and
- * create contact, fetch vehicle context, update project, place outbound call.
+ * create contact, fetch vehicle context, build prompt, place outbound call.
  * Result is stored by the existing call-ended webhook when the call finishes.
  *
- * SLA + vehicle context: see SLA_AND_VEHICLE_CONTEXT.md in this folder.
- * Primary path: Gemini URL context (one API call, ~15-20s).
- * Fallback: Playwright + Gemini extract (if URL context fails).
- * createContact and vehicle fetch run in parallel to save time.
+ * SLA strategy (target: 30s callback):
+ * 1. Playwright (primary) — full JS render, clicks spec tabs → best content quality.
+ * 2. Gemini URL context (fallback) — if Playwright fails/blocked.
+ * 3. System prompt is passed at call time via assistantOverrides, NOT by updating
+ *    the VAPI assistant. This eliminates the ~40s VAPI PATCH bottleneck.
+ * 4. createContact, vehicle fetch, and updateProject run in parallel where possible.
  */
 
-import { getProject, updateProject, createContacts, updateContact } from "@/lib/data/store";
+import { getProject, getDealer, updateProject, createContacts } from "@/lib/data/store";
 import { fetchVehicleListingHtml } from "@/lib/vehicle-listing/fetch-html";
 import { extractFullTextFromHtml, extractVehicleContextFromUrl, isGeminiConfigured } from "@/lib/gemini/client";
 import { ensureProjectAssistantId } from "@/lib/vapi/ensureAssistant";
-import { createOutboundCall, getPhoneNumberIdForCall } from "@/lib/vapi/client";
+import { createOutboundCall, getPhoneNumberIdForCall, enrichBusinessContextWithDealer } from "@/lib/vapi/client";
+import { buildSystemPrompt } from "@/lib/vapi/prompt-builder";
+import type { PromptProject } from "@/lib/vapi/prompt-builder";
 import type { ParsedEnquiry } from "./parse-email";
 
 export type PipelineResult =
@@ -21,39 +25,43 @@ export type PipelineResult =
   | { ok: false; error: string };
 
 /**
- * Fetch vehicle context: try Gemini URL context first (fast, no browser).
- * Falls back to Playwright + Gemini extract if URL context fails.
+ * Fetch vehicle context: Playwright first (best content — specs, tire sizes, etc.).
+ * Falls back to Gemini URL context if Playwright fails or is blocked.
  */
 async function fetchVehicleContext(
   url: string,
   timings: Record<string, number>
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  // Primary: Playwright + Gemini extract (best content quality)
   let t = Date.now();
+  const fetchResult = await fetchVehicleListingHtml(url);
+  timings.fetchHtml = Date.now() - t;
+
+  if (fetchResult.ok) {
+    t = Date.now();
+    const extractResult = await extractFullTextFromHtml(fetchResult.html);
+    timings.geminiExtract = Date.now() - t;
+    if (extractResult.ok) {
+      timings.vehicleContextMethod = 0; // 0 = Playwright + Gemini extract
+      console.log("[Pipeline] Playwright succeeded in %dms (fetch: %dms, extract: %dms)", timings.fetchHtml + timings.geminiExtract, timings.fetchHtml, timings.geminiExtract);
+      return extractResult;
+    }
+    console.warn("[Pipeline] Gemini extract failed after Playwright: %s", extractResult.error);
+  } else {
+    console.warn("[Pipeline] Playwright failed in %dms: %s — trying URL context", timings.fetchHtml, fetchResult.error);
+  }
+
+  // Fallback: Gemini URL context (no browser needed)
+  t = Date.now();
   const urlResult = await extractVehicleContextFromUrl(url);
   timings.geminiUrlContext = Date.now() - t;
   if (urlResult.ok) {
-    timings.vehicleContextMethod = 0; // 0 = Gemini URL context
-    console.log("[Pipeline] Gemini URL context succeeded in %dms", timings.geminiUrlContext);
+    timings.vehicleContextMethod = 1; // 1 = Gemini URL context fallback
+    console.log("[Pipeline] URL context fallback succeeded in %dms", timings.geminiUrlContext);
     return urlResult;
   }
-  console.warn("[Pipeline] Gemini URL context failed in %dms: %s — falling back to Playwright", timings.geminiUrlContext, urlResult.error);
-
-  t = Date.now();
-  const fetchResult = await fetchVehicleListingHtml(url);
-  timings.fetchHtml = Date.now() - t;
-  if (!fetchResult.ok) {
-    return { ok: false, error: `Could not load listing: ${fetchResult.error}` };
-  }
-
-  t = Date.now();
-  const extractResult = await extractFullTextFromHtml(fetchResult.html);
-  timings.geminiExtract = Date.now() - t;
-  if (!extractResult.ok) {
-    return { ok: false, error: extractResult.error };
-  }
-  timings.vehicleContextMethod = 1; // 1 = Playwright + Gemini extract
-  console.log("[Pipeline] Playwright fallback succeeded in %dms (fetch: %dms, extract: %dms)", timings.fetchHtml + timings.geminiExtract, timings.fetchHtml, timings.geminiExtract);
-  return extractResult;
+  console.error("[Pipeline] Both Playwright and URL context failed. URL context: %s", urlResult.error);
+  return { ok: false, error: `All vehicle fetch methods failed. Last: ${urlResult.error}` };
 }
 
 /**
@@ -86,15 +94,23 @@ export async function runForwardedEnquiryPipeline(
       ? enquiry.vehicleLink
       : "https://" + enquiry.vehicleLink;
 
-    // Run createContact and vehicle context fetch in parallel (no dependency between them)
+    let phoneNumberId: string;
+    try {
+      phoneNumberId = getPhoneNumberIdForCall();
+    } catch {
+      return { ok: false, error: "VAPI phone number not configured (VAPI_PHONE_NUMBER_ID)" };
+    }
+
+    // Phase 1: fetch vehicle context + create contact + get dealer (all independent, parallel)
     t = Date.now();
-    const [contactResult, vehicleResult] = await Promise.all([
+    const [contactResult, vehicleResult, dealer] = await Promise.all([
       createContacts(projectId, [
         { phone: enquiry.phone, name: enquiry.name, email: enquiry.email },
       ], { skipDuplicates: true }),
       fetchVehicleContext(url, timings),
+      project.dealerId ? getDealer(project.dealerId, orgId) : Promise.resolve(null),
     ]);
-    timings.createContact = Date.now() - t;
+    timings.phase1_parallel = Date.now() - t;
 
     const contactId = contactResult[0]?.id;
     if (!contactId) {
@@ -105,32 +121,42 @@ export async function runForwardedEnquiryPipeline(
       return { ok: false, error: vehicleResult.error };
     }
 
-    t = Date.now();
-    await updateProject(projectId, {
+    // Phase 2: build system prompt with vehicle context + dealer info
+    let businessContext = project.businessContext ?? "";
+    if (dealer) {
+      businessContext = enrichBusinessContextWithDealer(businessContext, dealer);
+    }
+    const promptProject: PromptProject = {
+      ...project,
+      businessContext,
       vehicleContextFullText: vehicleResult.text,
-      vehicleContextUpdatedAt: new Date().toISOString(),
-    });
-    timings.updateProject = Date.now() - t;
+    };
+    const systemPrompt = buildSystemPrompt(promptProject);
 
-    let phoneNumberId: string;
-    try {
-      phoneNumberId = getPhoneNumberIdForCall();
-    } catch {
-      return { ok: false, error: "VAPI phone number not configured (VAPI_PHONE_NUMBER_ID)" };
+    // If project has no assistant yet, create one first (one-time setup)
+    let assistantId = project.assistantId?.trim() || "";
+    if (!assistantId) {
+      t = Date.now();
+      assistantId = await ensureProjectAssistantId(projectId, { orgId, project: { ...project, vehicleContextFullText: vehicleResult.text } });
+      timings.ensureAssistant = Date.now() - t;
     }
 
+    // Phase 3: place call (with prompt override) + persist vehicle context to Firestore (parallel)
     t = Date.now();
-    const assistantId = await ensureProjectAssistantId(projectId, orgId);
-    timings.ensureAssistant = Date.now() - t;
-
-    t = Date.now();
-    const callId = await createOutboundCall({
-      assistantId,
-      phoneNumberId,
-      customerNumber: enquiry.phone,
-      customerName: enquiry.name,
-    });
-    timings.createCall = Date.now() - t;
+    const [callId] = await Promise.all([
+      createOutboundCall({
+        assistantId,
+        phoneNumberId,
+        customerNumber: enquiry.phone,
+        customerName: enquiry.name,
+        systemPrompt,
+      }),
+      updateProject(projectId, {
+        vehicleContextFullText: vehicleResult.text,
+        vehicleContextUpdatedAt: new Date().toISOString(),
+      }),
+    ]);
+    timings.phase3_callAndSave = Date.now() - t;
 
     timings.total = Date.now() - pipelineStart;
     console.log("[Pipeline] Completed in %dms — timings: %o", timings.total, timings);

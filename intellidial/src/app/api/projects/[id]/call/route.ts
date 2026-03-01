@@ -135,7 +135,7 @@ export async function POST(
   }
 
   try {
-    const assistantId = await ensureProjectAssistantId(projectId, org.orgId);
+    const assistantId = await ensureProjectAssistantId(projectId, { orgId: org.orgId });
     const phoneNumberId = project.agentPhoneNumberId?.trim() ?? getPhoneNumberIdForCall();
     console.log("[Call API] Using phone number ID:", phoneNumberId);
     const callIds: string[] = [];

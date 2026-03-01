@@ -126,7 +126,10 @@ type VapiCallPayload = {
   assistantId: string;
   phoneNumberId: string;
   customer: { number: string; name?: string };
-  assistantOverrides?: { variableValues?: Record<string, string> };
+  assistantOverrides?: {
+    variableValues?: Record<string, string>;
+    model?: { messages: Array<{ role: "system"; content: string }> };
+  };
 };
 
 function getApiKey(): string | undefined {
@@ -605,8 +608,9 @@ export async function createOutboundCall(params: {
   phoneNumberId: string;
   customerNumber: string;
   customerName?: string | null;
+  systemPrompt?: string;
 }): Promise<string> {
-  const { assistantId, phoneNumberId, customerNumber, customerName } = params;
+  const { assistantId, phoneNumberId, customerNumber, customerName, systemPrompt } = params;
   let number = customerNumber.trim().replace(/\s/g, "");
   
   // Normalize South African numbers
@@ -638,6 +642,15 @@ export async function createOutboundCall(params: {
     console.warn("[VAPI] createOutboundCall: suspicious number length", number, "digits:", digitsAfterCountryCode.length);
   }
 
+  const overrides: VapiCallPayload["assistantOverrides"] = {
+    variableValues: {
+      customerName: (customerName?.trim() || "the person who inquired").slice(0, 40),
+    },
+  };
+  if (systemPrompt) {
+    overrides.model = { messages: [{ role: "system", content: systemPrompt }] };
+  }
+
   const payload: VapiCallPayload = {
     assistantId,
     phoneNumberId,
@@ -645,12 +658,7 @@ export async function createOutboundCall(params: {
       number,
       ...(customerName ? { name: customerName.slice(0, 40) } : {}),
     },
-    // {{customerName}} in firstMessage is filled from variableValues, not customer.name
-    assistantOverrides: {
-      variableValues: {
-        customerName: (customerName?.trim() || "the person who inquired").slice(0, 40),
-      },
-    },
+    assistantOverrides: overrides,
   };
 
   console.log("[VAPI] createOutboundCall: payload", JSON.stringify(payload, null, 2));

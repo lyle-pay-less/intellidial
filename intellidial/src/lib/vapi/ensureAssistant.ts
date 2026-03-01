@@ -7,6 +7,9 @@
 import { getProject, getDealer, updateProject } from "@/lib/data/store";
 import { createOrUpdateAssistant, ensureStructuredOutput, enrichBusinessContextWithDealer } from "./client";
 import type { ProjectForVapi } from "./client";
+import type { ProjectDoc } from "@/lib/firebase/types";
+
+type ProjectWithId = ProjectDoc & { id: string };
 
 const FAILED_CREATE_MESSAGE = "Failed to create agent. Try again.";
 
@@ -17,20 +20,21 @@ const FAILED_CREATE_MESSAGE = "Failed to create agent. Try again.";
  * When the project has captureFields, ensures a VAPI structured output exists and is linked to the assistant.
  *
  * @param projectId - Project id
- * @param orgId - Optional org id for auth (project must belong to this org)
+ * @param opts.orgId - Optional org id for auth
+ * @param opts.project - Pre-fetched project (avoids redundant Firestore read)
  * @returns The assistant id (existing or newly created)
  * @throws Error with user-facing message if project not found or VAPI fails
  */
 export async function ensureProjectAssistantId(
   projectId: string,
-  orgId?: string
+  opts?: { orgId?: string; project?: ProjectWithId }
 ): Promise<string> {
-  let project = await getProject(projectId, orgId);
+  const orgId = opts?.orgId;
+  let project = opts?.project ?? await getProject(projectId, orgId);
   if (!project) {
     throw new Error("Project not found");
   }
 
-  // When project is linked to a dealer, inject dealer contact details into business context for the agent
   let projectForVapi: ProjectForVapi = project as ProjectForVapi;
   if (project.dealerId && project.orgId) {
     const dealer = await getDealer(project.dealerId, project.orgId);
@@ -44,22 +48,41 @@ export async function ensureProjectAssistantId(
 
   try {
     const captureFields = project.captureFields ?? [];
-    let structuredOutputId: string | null = null;
-    if (captureFields.length > 0) {
-      structuredOutputId = await ensureStructuredOutput(project as ProjectForVapi);
-      if (structuredOutputId && !project.structuredOutputId?.trim()) {
+    const hasCaptureFields = captureFields.length > 0;
+    const hasAssistant = !!project.assistantId?.trim();
+    const hasStructuredOutput = !!project.structuredOutputId?.trim();
+
+    // Fast path: both IDs exist → run VAPI structured output sync and assistant update in parallel
+    if (hasAssistant && hasStructuredOutput && hasCaptureFields) {
+      await Promise.all([
+        ensureStructuredOutput(project as ProjectForVapi),
+        createOrUpdateAssistant(projectForVapi),
+      ]);
+      return project.assistantId!.trim();
+    }
+
+    // Existing assistant, no capture fields → just update assistant
+    if (hasAssistant && !hasCaptureFields) {
+      await createOrUpdateAssistant(projectForVapi);
+      return project.assistantId!.trim();
+    }
+
+    // Has capture fields but structured output needs creating first
+    if (hasCaptureFields) {
+      const structuredOutputId = await ensureStructuredOutput(project as ProjectForVapi);
+      if (structuredOutputId && !hasStructuredOutput) {
         await updateProject(projectId, { structuredOutputId });
         project = { ...project, structuredOutputId };
+        projectForVapi = { ...projectForVapi, structuredOutputId };
       } else if (structuredOutputId) {
         project = { ...project, structuredOutputId };
+        projectForVapi = { ...projectForVapi, structuredOutputId };
       }
     }
 
-    if (project.assistantId?.trim()) {
+    if (hasAssistant) {
       await createOrUpdateAssistant(projectForVapi);
-      // Brief delay for VAPI to propagate assistant config (voice, prompt) before placing the call
-      await new Promise((r) => setTimeout(r, 500));
-      return project.assistantId.trim();
+      return project.assistantId!.trim();
     }
 
     const assistantId = await createOrUpdateAssistant(projectForVapi);
