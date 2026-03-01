@@ -1,13 +1,25 @@
 /**
- * Fetch full HTML from a vehicle listing URL. Uses Playwright (headless Chromium) when
- * available so JS-rendered content is included; falls back to fetch for static pages.
- * Used by refresh-vehicle-context to get full page content for Gemini extraction.
+ * Fetch full HTML from a vehicle listing URL for the enquiry pipeline (SLA path).
+ *
+ * DESIGN (SLA + full context):
+ * - We always use Playwright first so the agent has full context (expanded "Detailed
+ *   specifications", all sections). Plain fetch often returns a JS shell or partial HTML;
+ *   we have no data showing fetch content equals Playwright, and character counts are
+ *   similar across pages so length/keyword heuristics are unreliable. One consistent
+ *   path = predictable performance and guaranteed full context when Playwright succeeds.
+ * - Playwright is capped by VEHICLE_FETCH_SLA_MS so we don't blow the 60s callback SLA.
+ * - If Playwright fails or times out, we fall back to fetch and log that context may be
+ *   partial (agent might not answer every question). We still attempt the call.
+ *
+ * Used by: dealer-forwarding pipeline (SLA), refresh-vehicle-context (dashboard).
  */
 
 export type FetchHtmlResult =
   | { ok: true; html: string }
   | { ok: false; error: string };
 
+/** Max time for vehicle fetch step so pipeline can meet 60s callback SLA. */
+const VEHICLE_FETCH_SLA_MS = 45_000;
 const FETCH_TIMEOUT_MS = 35_000;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -51,44 +63,59 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
       });
       await page.goto(url, {
         waitUntil: "domcontentloaded",
-        timeout: FETCH_TIMEOUT_MS,
+        timeout: VEHICLE_FETCH_SLA_MS,
       });
-      // Wait for JS to render listing content
-      await new Promise((r) => setTimeout(r, 2000));
-      // Dismiss cookie banner so it doesn't cover the spec button (AutoTrader, Cars.co.za, etc.)
+      // Minimal waits tuned for 60s callback SLA (domcontentloaded + cookie + specs)
+      await new Promise((r) => setTimeout(r, 1200));
       try {
         const cookieBtn = page.getByRole("button", { name: /accept|agree|allow all|i accept|cookies/i }).first();
-        await cookieBtn.click({ timeout: 3000 });
-        await new Promise((r) => setTimeout(r, 500));
+        await cookieBtn.click({ timeout: 2000 });
+        await new Promise((r) => setTimeout(r, 300));
       } catch {
-        // No cookie button or different text — continue
+        // No cookie button — continue
       }
-      // Scroll down to trigger lazy-loaded content
       await page.evaluate(() => window.scrollBy(0, 600));
-      await new Promise((r) => setTimeout(r, 800));
-      // Expand detailed specifications panel (AutoTrader hides specs behind a button)
+      await new Promise((r) => setTimeout(r, 400));
       try {
-        const specBtn = page.locator('a, button').filter({ hasText: /detailed specifications/i }).first();
-        await specBtn.click({ timeout: 5000 });
-        await new Promise((r) => setTimeout(r, 3000));
-        // AutoTrader shows spec categories (General, Engine, Handling, Comfort, Technology, Safety) collapsed;
-        // expand each so their content is in the DOM for extraction
-        const sectionLabels = ["General", "Engine", "Handling", "Comfort", "Technology", "Safety"];
-        for (const label of sectionLabels) {
-          try {
-            const sectionBtn = page.locator('button, a, [role="button"], [role="tab"]').filter({ hasText: new RegExp(`\\b${label}\\b`, "i") }).first();
-            await sectionBtn.click({ timeout: 2000 });
-            await new Promise((r) => setTimeout(r, 400));
-          } catch {
-            // Section not found or not clickable — skip
+        // Open specs: match common phrases so we don't miss sites that use different wording
+        const specBtn = page.locator('a, button').filter({
+          hasText: /detailed specifications|view (full )?specs?|specifications?|tech specs?|full specs?/i,
+        }).first();
+        await specBtn.click({ timeout: 3000 });
+        await new Promise((r) => setTimeout(r, 1500));
+        // Expand all spec sections: discover from page first (no hardcoded labels — sites differ)
+        const tabsClicked = await page.evaluate(() => {
+          const tabs = document.querySelectorAll('[role="tab"]');
+          let clicked = 0;
+          tabs.forEach((el, i) => {
+            if (i > 25) return;
+            const t = el as HTMLElement;
+            if (t.offsetParent && !t.getAttribute('aria-selected')) {
+              t.click();
+              clicked++;
+            }
+          });
+          return clicked;
+        });
+        await new Promise((r) => setTimeout(r, tabsClicked > 0 ? 400 : 0));
+        // Fallback: click by common section labels only when page doesn't use role="tab"
+        if (tabsClicked === 0) {
+          const sectionLabels = ["General", "Engine", "Handling", "Comfort", "Technology", "Safety", "Exterior", "Interior", "Performance", "Warranty"];
+          for (const label of sectionLabels) {
+            try {
+              const sectionBtn = page.locator('button, a, [role="button"], [role="tab"]').filter({ hasText: new RegExp(`\\b${label}\\b`, "i") }).first();
+              await sectionBtn.click({ timeout: 800 });
+              await new Promise((r) => setTimeout(r, 150));
+            } catch {
+              // Section not found — skip
+            }
           }
         }
-        await new Promise((r) => setTimeout(r, 800));
-        // Scroll within the page to ensure all spec content is loaded
+        await new Promise((r) => setTimeout(r, 400));
         await page.evaluate(() => window.scrollBy(0, 2000));
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, 600));
       } catch {
-        // No spec button found — keep initial content
+        // No spec button — keep initial content
       }
       const html = await page.content();
       await browser.close();
@@ -106,13 +133,14 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
 }
 
 /**
- * Fallback: plain fetch. Works for server-rendered pages; JS-heavy SPAs may return a shell.
+ * Plain fetch. Works for server-rendered pages; JS-heavy SPAs may return a shell.
+ * @param timeoutMs - abort after this many ms
  */
-async function fetchWithFetch(url: string): Promise<FetchHtmlResult> {
+async function fetchWithFetch(url: string, timeoutMs: number = FETCH_TIMEOUT_MS): Promise<FetchHtmlResult> {
   try {
     const res = await fetch(url, {
       headers: BROWSER_HEADERS,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
       return { ok: false, error: `HTTP ${res.status}` };
@@ -129,15 +157,39 @@ async function fetchWithFetch(url: string): Promise<FetchHtmlResult> {
 }
 
 /**
- * Fetch full HTML from a vehicle listing URL. Tries Playwright first for full JS render;
- * falls back to fetch if Playwright fails (e.g. not installed or timeout).
+ * Fetch full HTML from a vehicle listing URL.
+ * Uses Playwright first (full context for agent); on failure or SLA timeout, falls back to fetch.
  */
 export async function fetchVehicleListingHtml(url: string): Promise<FetchHtmlResult> {
   const trimmed = url.trim();
   if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
     return { ok: false, error: "URL must start with http:// or https://" };
   }
-  const playwrightResult = await fetchWithPlaywright(trimmed);
+  let playwrightResult: FetchHtmlResult;
+  try {
+    playwrightResult = await withTimeout(
+      fetchWithPlaywright(trimmed),
+      VEHICLE_FETCH_SLA_MS,
+      "Playwright timed out (SLA cap)"
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    playwrightResult = { ok: false, error: msg };
+  }
   if (playwrightResult.ok) return playwrightResult;
-  return fetchWithFetch(trimmed);
+  if (playwrightResult.error?.includes("timed out") || playwrightResult.error?.includes("SLA cap")) {
+    console.warn("[fetchVehicleListingHtml] Playwright SLA timeout — falling back to fetch; context may be partial.", { url: trimmed });
+  }
+  const fetchResult = await fetchWithFetch(trimmed, Math.min(10_000, VEHICLE_FETCH_SLA_MS - 5000));
+  if (fetchResult.ok) return fetchResult;
+  return playwrightResult;
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(timeoutMessage)), ms)
+    ),
+  ]);
 }

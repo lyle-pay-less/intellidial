@@ -2,6 +2,10 @@
  * Pipeline: take parsed enquiry (name, phone, vehicle link) and
  * create contact, fetch vehicle context, update project, place outbound call.
  * Result is stored by the existing call-ended webhook when the call finishes.
+ *
+ * SLA + vehicle context: see SLA_AND_VEHICLE_CONTEXT.md in this folder.
+ * We use Playwright-first for full listing context (no heuristic fast path);
+ * vehicle fetch is capped so we meet the callback SLA.
  */
 
 import { getProject, updateProject, createContacts, updateContact } from "@/lib/data/store";
