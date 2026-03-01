@@ -1,15 +1,9 @@
 /**
  * Fetch full HTML from a vehicle listing URL for the enquiry pipeline (SLA path).
  *
- * DESIGN (SLA + full context):
- * - We always use Playwright first so the agent has full context (expanded "Detailed
- *   specifications", all sections). Plain fetch often returns a JS shell or partial HTML;
- *   we have no data showing fetch content equals Playwright, and character counts are
- *   similar across pages so length/keyword heuristics are unreliable. One consistent
- *   path = predictable performance and guaranteed full context when Playwright succeeds.
- * - Playwright is capped by VEHICLE_FETCH_SLA_MS so we don't blow the 60s callback SLA.
- * - If Playwright fails or times out, we fall back to fetch and log that context may be
- *   partial (agent might not answer every question). We still attempt the call.
+ * DESIGN: Plain fetch first (AutoTrader SSR returns 109K HTML with specs).
+ * Playwright fallback only if fetch gets 503/blocked. This gives ~1-2s fetch
+ * vs 50-80s Playwright from Cloud Run datacenter IPs.
  *
  * Used by: dealer-forwarding pipeline (SLA), refresh-vehicle-context (dashboard).
  */
@@ -18,8 +12,8 @@ export type FetchHtmlResult =
   | { ok: true; html: string }
   | { ok: false; error: string };
 
-/** Max time for vehicle fetch step so pipeline can meet 60s callback SLA. */
-const VEHICLE_FETCH_SLA_MS = 45_000;
+/** Playwright fallback timeout. 90s so it can actually complete if plain fetch is blocked. */
+const VEHICLE_FETCH_SLA_MS = 90_000;
 const FETCH_TIMEOUT_MS = 35_000;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -125,38 +119,53 @@ async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
 }
 
 /**
- * Plain fetch. Works for server-rendered pages; JS-heavy SPAs may return a shell.
- * @param timeoutMs - abort after this many ms
+ * Plain fetch with browser headers. AutoTrader uses SSR so this returns full HTML
+ * (~109K) including most vehicle specs. Logs status/size for diagnostics.
  */
 async function fetchWithFetch(url: string, timeoutMs: number = FETCH_TIMEOUT_MS): Promise<FetchHtmlResult> {
   try {
+    const t = Date.now();
     const res = await fetch(url, {
       headers: BROWSER_HEADERS,
       signal: AbortSignal.timeout(timeoutMs),
     });
+    const elapsed = Date.now() - t;
     if (!res.ok) {
+      console.warn("[fetchWithFetch] HTTP %d in %dms for %s", res.status, elapsed, url);
       return { ok: false, error: `HTTP ${res.status}` };
     }
     const html = await res.text();
+    console.log("[fetchWithFetch] HTTP 200 in %dms, %d chars for %s", elapsed, html.length, url);
     if (!html || html.length < 500) {
       return { ok: false, error: "Response too small or empty." };
     }
     return { ok: true, html };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error("[fetchWithFetch] Error: %s for %s", msg, url);
     return { ok: false, error: `Fetch failed: ${msg}` };
   }
 }
 
 /**
  * Fetch full HTML from a vehicle listing URL.
- * Uses Playwright first (full context for agent); on failure or SLA timeout, falls back to fetch.
+ * Plain fetch first (fast, AutoTrader SSR). Playwright fallback if fetch is blocked (503).
  */
 export async function fetchVehicleListingHtml(url: string): Promise<FetchHtmlResult> {
   const trimmed = url.trim();
   if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
     return { ok: false, error: "URL must start with http:// or https://" };
   }
+
+  // Primary: plain fetch with browser headers (~1-2s)
+  const fetchResult = await fetchWithFetch(trimmed);
+  if (fetchResult.ok) {
+    console.log("[fetchVehicleListingHtml] Plain fetch succeeded (%d chars)", fetchResult.html.length);
+    return fetchResult;
+  }
+  console.warn("[fetchVehicleListingHtml] Plain fetch failed: %s — falling back to Playwright", fetchResult.error);
+
+  // Fallback: Playwright (slow but bypasses JS-only or blocked responses)
   let playwrightResult: FetchHtmlResult;
   try {
     playwrightResult = await withTimeout(
@@ -168,12 +177,9 @@ export async function fetchVehicleListingHtml(url: string): Promise<FetchHtmlRes
     const msg = e instanceof Error ? e.message : String(e);
     playwrightResult = { ok: false, error: msg };
   }
-  if (playwrightResult.ok) return playwrightResult;
-  if (playwrightResult.error?.includes("timed out") || playwrightResult.error?.includes("SLA cap")) {
-    console.warn("[fetchVehicleListingHtml] Playwright SLA timeout — falling back to fetch; context may be partial.", { url: trimmed });
+  if (playwrightResult.ok) {
+    console.log("[fetchVehicleListingHtml] Playwright fallback succeeded (%d chars)", playwrightResult.html.length);
   }
-  const fetchResult = await fetchWithFetch(trimmed, Math.min(10_000, VEHICLE_FETCH_SLA_MS - 5000));
-  if (fetchResult.ok) return fetchResult;
   return playwrightResult;
 }
 
