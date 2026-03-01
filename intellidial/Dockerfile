@@ -31,8 +31,8 @@ ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
 ENV NEXT_PUBLIC_CALENDLY_URL=$NEXT_PUBLIC_CALENDLY_URL
 RUN npm run build
 
-# Production image: use Playwright base for Chromium (bypasses 503 from AutoTrader)
-FROM mcr.microsoft.com/playwright:v1.49.0-noble AS runner
+# Production image — lightweight Alpine (no Playwright/Chromium needed)
+FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -40,9 +40,6 @@ ENV NODE_ENV=production
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-# Standalone may omit playwright (dynamic import); ensure it's available
-COPY --from=deps /app/node_modules/playwright ./node_modules/playwright
-COPY --from=deps /app/node_modules/playwright-core ./node_modules/playwright-core
 
 EXPOSE 3000
 

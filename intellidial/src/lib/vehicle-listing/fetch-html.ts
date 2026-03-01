@@ -1,31 +1,34 @@
 /**
- * Fetch full HTML from a vehicle listing URL for the enquiry pipeline (SLA path).
+ * Fetch full HTML from a vehicle listing URL for the enquiry pipeline.
  *
- * DESIGN: Plain fetch first (AutoTrader SSR returns 109K HTML with specs).
- * Playwright fallback only if fetch gets 503/blocked. This gives ~1-2s fetch
- * vs 50-80s Playwright from Cloud Run datacenter IPs.
+ * Strategy (target: sub-10s):
+ *   1. Direct fetch with browser headers (free, ~1-2s if not blocked)
+ *   2. Proxy fetch via Bright Data residential IP (~2-7s, ~$0.0004/request)
  *
- * Used by: dealer-forwarding pipeline (SLA), refresh-vehicle-context (dashboard).
+ * Playwright has been removed — the proxy bypasses IP blocking far faster
+ * and cheaper than running a headless browser on Cloud Run.
  */
+
+import { fetch as proxyFetch, ProxyAgent } from "undici";
 
 export type FetchHtmlResult =
   | { ok: true; html: string }
   | { ok: false; error: string };
 
-/** Playwright fallback timeout. 90s so it can actually complete if plain fetch is blocked. */
-const VEHICLE_FETCH_SLA_MS = 90_000;
-const FETCH_TIMEOUT_MS = 35_000;
+const FETCH_TIMEOUT_MS = 15_000;
+const PROXY_TIMEOUT_MS = 30_000;
+
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
-/** Browser-like headers to reduce bot detection / 503 from listing sites. */
 const BROWSER_HEADERS: Record<string, string> = {
   "User-Agent": USER_AGENT,
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
   "Accept-Language": "en-ZA,en;q=0.9",
   "Accept-Encoding": "gzip, deflate, br",
-  "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+  "sec-ch-ua":
+    '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"Windows"',
   "Sec-Fetch-Dest": "document",
@@ -35,121 +38,80 @@ const BROWSER_HEADERS: Record<string, string> = {
   "Upgrade-Insecure-Requests": "1",
 };
 
-/**
- * Fetch page HTML using Playwright (full JS render). Returns error if Playwright fails or times out.
- */
-async function fetchWithPlaywright(url: string): Promise<FetchHtmlResult> {
-  try {
-    const { chromium } = await import("playwright");
-    const browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-    });
-    try {
-      const page = await browser.newPage({
-        userAgent: USER_AGENT,
-        viewport: { width: 1280, height: 720 },
-        locale: "en-ZA",
-      });
-      await page.setExtraHTTPHeaders({
-        "Accept-Language": "en-ZA,en;q=0.9",
-        Referer: "https://www.autotrader.co.za/",
-      });
-      await page.goto(url, {
-        waitUntil: "domcontentloaded",
-        timeout: VEHICLE_FETCH_SLA_MS,
-      });
-      await new Promise((r) => setTimeout(r, 500));
-      try {
-        const cookieBtn = page.getByRole("button", { name: /accept|agree|allow all|i accept|cookies/i }).first();
-        await cookieBtn.click({ timeout: 1000 });
-      } catch {
-        // No cookie button — continue
-      }
-      await page.evaluate(() => window.scrollBy(0, 600));
-      try {
-        const specBtn = page.locator('a, button').filter({
-          hasText: /detailed specifications|view (full )?specs?|specifications?|tech specs?|full specs?/i,
-        }).first();
-        await specBtn.click({ timeout: 1500 });
-        await new Promise((r) => setTimeout(r, 600));
-        // Expand all spec sections via role="tab" in a single evaluate (no round-trips)
-        const tabsClicked = await page.evaluate(() => {
-          const tabs = document.querySelectorAll('[role="tab"]');
-          let clicked = 0;
-          tabs.forEach((el, i) => {
-            if (i > 25) return;
-            (el as HTMLElement).click();
-            clicked++;
-          });
-          return clicked;
-        });
-        if (tabsClicked === 0) {
-          // Fallback: click common section labels in a single evaluate (avoids per-label round-trips)
-          await page.evaluate(() => {
-            const labels = ["General", "Engine", "Handling", "Comfort", "Technology", "Safety", "Exterior", "Interior", "Performance", "Warranty"];
-            for (const label of labels) {
-              const re = new RegExp("\\b" + label + "\\b", "i");
-              const els = document.querySelectorAll('button, a, [role="button"], [role="tab"]');
-              for (const el of els) {
-                if (re.test(el.textContent ?? "")) { (el as HTMLElement).click(); break; }
-              }
-            }
-          });
-        }
-        await new Promise((r) => setTimeout(r, 300));
-        await page.evaluate(() => window.scrollBy(0, 2000));
-        await new Promise((r) => setTimeout(r, 300));
-      } catch {
-        // No spec button — keep initial content
-      }
-      const html = await page.content();
-      await browser.close();
-      if (!html || html.length < 500) {
-        return { ok: false, error: "Page content too small or empty." };
-      }
-      return { ok: true, html };
-    } finally {
-      await browser.close().catch(() => {});
-    }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: `Playwright failed: ${msg}` };
-  }
+function getProxyUrl(): string | null {
+  const url = process.env.BRIGHT_DATA_PROXY_URL;
+  return url?.trim() || null;
 }
 
 /**
- * Plain fetch with browser headers. AutoTrader uses SSR so this returns full HTML
- * (~109K) including most vehicle specs. Logs status/size for diagnostics.
+ * Direct fetch — free, fast when not blocked. Returns 503 from AutoTrader on
+ * Cloud Run datacenter IPs.
  */
-async function fetchWithFetch(url: string, timeoutMs: number = FETCH_TIMEOUT_MS): Promise<FetchHtmlResult> {
+async function fetchDirect(url: string): Promise<FetchHtmlResult> {
   try {
     const t = Date.now();
-    const res = await fetch(url, {
+    const res = await globalThis.fetch(url, {
       headers: BROWSER_HEADERS,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     const elapsed = Date.now() - t;
     if (!res.ok) {
-      console.warn("[fetchWithFetch] HTTP %d in %dms for %s", res.status, elapsed, url);
+      console.warn("[fetchDirect] HTTP %d in %dms for %s", res.status, elapsed, url);
       return { ok: false, error: `HTTP ${res.status}` };
     }
     const html = await res.text();
-    console.log("[fetchWithFetch] HTTP 200 in %dms, %d chars for %s", elapsed, html.length, url);
+    console.log("[fetchDirect] HTTP 200 in %dms, %d chars for %s", elapsed, html.length, url);
     if (!html || html.length < 500) {
-      return { ok: false, error: "Response too small or empty." };
+      return { ok: false, error: "Response too small or empty" };
     }
     return { ok: true, html };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    console.error("[fetchWithFetch] Error: %s for %s", msg, url);
-    return { ok: false, error: `Fetch failed: ${msg}` };
+    console.error("[fetchDirect] Error: %s for %s", msg, url);
+    return { ok: false, error: `Direct fetch failed: ${msg}` };
   }
 }
 
 /**
- * Fetch full HTML from a vehicle listing URL.
- * Plain fetch first (fast, AutoTrader SSR). Playwright fallback if fetch is blocked (503).
+ * Fetch through Bright Data residential proxy. Bypasses datacenter IP blocking.
+ * Uses undici's ProxyAgent to route through the configured proxy URL.
+ */
+async function fetchWithProxy(url: string): Promise<FetchHtmlResult> {
+  const proxyUrl = getProxyUrl();
+  if (!proxyUrl) {
+    return { ok: false, error: "BRIGHT_DATA_PROXY_URL not configured" };
+  }
+
+  const agent = new ProxyAgent(proxyUrl);
+  try {
+    const t = Date.now();
+    const res = await proxyFetch(url, {
+      headers: BROWSER_HEADERS,
+      dispatcher: agent,
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
+    const elapsed = Date.now() - t;
+    if (!res.ok) {
+      console.warn("[fetchWithProxy] HTTP %d in %dms for %s", res.status, elapsed, url);
+      return { ok: false, error: `Proxy HTTP ${res.status}` };
+    }
+    const html = await res.text();
+    console.log("[fetchWithProxy] HTTP 200 in %dms, %d chars for %s", elapsed, html.length, url);
+    if (!html || html.length < 500) {
+      return { ok: false, error: "Proxy response too small or empty" };
+    }
+    return { ok: true, html };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[fetchWithProxy] Error: %s for %s", msg, url);
+    return { ok: false, error: `Proxy fetch failed: ${msg}` };
+  } finally {
+    agent.close();
+  }
+}
+
+/**
+ * Fetch vehicle listing HTML. Direct first (free), proxy fallback (paid, bypasses blocking).
  */
 export async function fetchVehicleListingHtml(url: string): Promise<FetchHtmlResult> {
   const trimmed = url.trim();
@@ -157,64 +119,48 @@ export async function fetchVehicleListingHtml(url: string): Promise<FetchHtmlRes
     return { ok: false, error: "URL must start with http:// or https://" };
   }
 
-  // Primary: plain fetch with browser headers (~1-2s)
-  const fetchResult = await fetchWithFetch(trimmed);
-  if (fetchResult.ok) {
-    console.log("[fetchVehicleListingHtml] Plain fetch succeeded (%d chars)", fetchResult.html.length);
-    return fetchResult;
+  const directResult = await fetchDirect(trimmed);
+  if (directResult.ok) {
+    console.log("[fetchVehicleListingHtml] Direct fetch succeeded (%d chars)", directResult.html.length);
+    return directResult;
   }
-  console.warn("[fetchVehicleListingHtml] Plain fetch failed: %s — falling back to Playwright", fetchResult.error);
+  console.warn("[fetchVehicleListingHtml] Direct fetch failed: %s — trying proxy", directResult.error);
 
-  // Fallback: Playwright (slow but bypasses JS-only or blocked responses)
-  let playwrightResult: FetchHtmlResult;
-  try {
-    playwrightResult = await withTimeout(
-      fetchWithPlaywright(trimmed),
-      VEHICLE_FETCH_SLA_MS,
-      "Playwright timed out (SLA cap)"
-    );
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    playwrightResult = { ok: false, error: msg };
+  const proxyResult = await fetchWithProxy(trimmed);
+  if (proxyResult.ok) {
+    console.log("[fetchVehicleListingHtml] Proxy fetch succeeded (%d chars)", proxyResult.html.length);
+  } else {
+    console.error("[fetchVehicleListingHtml] Proxy also failed: %s", proxyResult.error);
   }
-  if (playwrightResult.ok) {
-    console.log("[fetchVehicleListingHtml] Playwright fallback succeeded (%d chars)", playwrightResult.html.length);
-  }
-  return playwrightResult;
-}
-
-function withTimeout<T>(p: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(timeoutMessage)), ms)
-    ),
-  ]);
+  return proxyResult;
 }
 
 const MAX_STRIPPED_CHARS = 60_000;
 
 /**
  * Fast HTML-to-text conversion (~10ms). Removes scripts, styles, SVGs, and HTML tags,
- * collapses whitespace, and truncates. Replaces the 22-50s Gemini extract step.
- * GPT-4o-mini (the VAPI agent LLM) can find vehicle specs in the resulting plain text.
+ * collapses whitespace, and truncates. GPT-4o-mini can find vehicle specs in the result.
  */
 export function stripHtmlToText(html: string): string {
   let text = html;
-  // Remove content-bearing block tags that are never useful listing content
   text = text.replace(/<script[\s\S]*?<\/script>/gi, " ");
   text = text.replace(/<style[\s\S]*?<\/style>/gi, " ");
   text = text.replace(/<svg[\s\S]*?<\/svg>/gi, " ");
   text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
   text = text.replace(/<nav[\s\S]*?<\/nav>/gi, " ");
   text = text.replace(/<footer[\s\S]*?<\/footer>/gi, " ");
-  // Replace block-level tags with newlines so content doesn't merge
-  text = text.replace(/<\/?(div|p|br|li|tr|td|th|h[1-6]|section|article|header|main|aside|blockquote|dt|dd|figcaption)[^>]*>/gi, "\n");
-  // Strip all remaining tags
+  text = text.replace(
+    /<\/?(div|p|br|li|tr|td|th|h[1-6]|section|article|header|main|aside|blockquote|dt|dd|figcaption)[^>]*>/gi,
+    "\n"
+  );
   text = text.replace(/<[^>]+>/g, " ");
-  // Decode common HTML entities
-  text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
-  // Collapse whitespace: multiple spaces to one, multiple newlines to two max
+  text = text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
   text = text.replace(/[ \t]+/g, " ");
   text = text.replace(/\n[ \t]*/g, "\n");
   text = text.replace(/\n{3,}/g, "\n\n");

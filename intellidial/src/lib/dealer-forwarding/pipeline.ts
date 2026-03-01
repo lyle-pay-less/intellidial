@@ -3,12 +3,12 @@
  * create contact, fetch vehicle context, build prompt, place outbound call.
  * Result is stored by the existing call-ended webhook when the call finishes.
  *
- * SLA strategy (target: 30s callback):
- * 1. Playwright (primary) — full JS render, clicks spec tabs → best content quality.
- * 2. Gemini URL context (fallback) — if Playwright fails/blocked.
- * 3. System prompt is passed at call time via assistantOverrides, NOT by updating
- *    the VAPI assistant. This eliminates the ~40s VAPI PATCH bottleneck.
- * 4. createContact, vehicle fetch, and updateProject run in parallel where possible.
+ * SLA strategy (target: 15s callback):
+ * 1. Direct fetch (free, ~1-2s) — works for non-blocked sites.
+ * 2. Bright Data proxy fetch (~2-7s, ~$0.0004) — bypasses IP blocking.
+ * 3. Gemini URL context (fallback) — if both fetch methods fail.
+ * 4. System prompt passed at call time via assistantOverrides (no VAPI PATCH).
+ * 5. createContact, vehicle fetch, and updateProject run in parallel.
  */
 
 import { getProject, getDealer, updateProject, createContacts } from "@/lib/data/store";
@@ -25,8 +25,8 @@ export type PipelineResult =
   | { ok: false; error: string };
 
 /**
- * Fetch vehicle context: Playwright + fast HTML strip (primary), URL context (fallback).
- * HTML-to-text strip runs in ~10ms, replacing the 22-50s Gemini extract step.
+ * Fetch vehicle context: direct/proxy fetch + fast HTML strip (primary),
+ * Gemini URL context (emergency fallback).
  */
 async function fetchVehicleContext(
   url: string,
@@ -41,25 +41,24 @@ async function fetchVehicleContext(
     const text = stripHtmlToText(fetchResult.html);
     timings.htmlStrip = Date.now() - t;
     if (text.length > 200) {
-      timings.vehicleContextMethod = 0; // 0 = Playwright + HTML strip
-      console.log("[Pipeline] Playwright + strip succeeded in %dms (fetch: %dms, strip: %dms, chars: %d)", timings.fetchHtml + timings.htmlStrip, timings.fetchHtml, timings.htmlStrip, text.length);
+      timings.vehicleContextMethod = 0; // 0 = direct or proxy fetch + strip
+      console.log("[Pipeline] Fetch + strip succeeded in %dms (fetch: %dms, strip: %dms, chars: %d)", timings.fetchHtml + timings.htmlStrip, timings.fetchHtml, timings.htmlStrip, text.length);
       return { ok: true, text };
     }
-    console.warn("[Pipeline] Stripped HTML too short (%d chars) — trying URL context", text.length);
+    console.warn("[Pipeline] Stripped HTML too short (%d chars) — trying Gemini URL context", text.length);
   } else {
-    console.warn("[Pipeline] Playwright failed in %dms: %s — trying URL context", timings.fetchHtml, fetchResult.error);
+    console.warn("[Pipeline] Fetch failed in %dms: %s — trying Gemini URL context", timings.fetchHtml, fetchResult.error);
   }
 
-  // Fallback: Gemini URL context (no browser needed)
   t = Date.now();
   const urlResult = await extractVehicleContextFromUrl(url);
   timings.geminiUrlContext = Date.now() - t;
   if (urlResult.ok) {
     timings.vehicleContextMethod = 1; // 1 = Gemini URL context fallback
-    console.log("[Pipeline] URL context fallback succeeded in %dms", timings.geminiUrlContext);
+    console.log("[Pipeline] Gemini URL context fallback succeeded in %dms", timings.geminiUrlContext);
     return urlResult;
   }
-  console.error("[Pipeline] Both Playwright and URL context failed. URL context: %s", urlResult.error);
+  console.error("[Pipeline] All fetch methods failed. Last: %s", urlResult.error);
   return { ok: false, error: `All vehicle fetch methods failed. Last: ${urlResult.error}` };
 }
 

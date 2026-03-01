@@ -54,7 +54,7 @@ export async function POST(
     );
   }
 
-  // 1. Fetch full HTML (Playwright, then fallback to fetch)
+  // 1. Fetch full HTML (direct, then proxy fallback)
   const fetchResult = await fetchVehicleListingHtml(normalizedUrl);
   if (!fetchResult.ok) {
     return NextResponse.json(

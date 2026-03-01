@@ -9,7 +9,7 @@ import { listDealers, getFirstOrgIdIfSingle, updateContact } from "@/lib/data/st
  * POST /api/webhooks/resend/inbound
  *
  * CRITICAL FOR 60s SLA: Return 200 to Resend immediately after validation.
- * The heavy pipeline (Playwright + Gemini + VAPI ~40-60s) runs via next/server after()
+ * The pipeline (fetch + Gemini + VAPI ~10-15s) runs via next/server after()
  * so the runtime keeps CPU allocated while we process in the background.
  * Without this, Resend retries on timeout with backoff up to 2 hours.
  */
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
 
     // Schedule pipeline to run AFTER response is sent (via next/server after()).
     // This ensures we return 200 to Resend within milliseconds while the
-    // runtime keeps CPU allocated for the pipeline (~40-60s for Playwright + Gemini + VAPI).
+    // runtime keeps CPU allocated for the pipeline (~10-15s for fetch + VAPI call).
     schedulePipelineAfterResponse(projectId, enquiry, emailId);
 
     return NextResponse.json({
