@@ -185,3 +185,36 @@ function withTimeout<T>(p: Promise<T>, ms: number, timeoutMessage: string): Prom
     ),
   ]);
 }
+
+const MAX_STRIPPED_CHARS = 60_000;
+
+/**
+ * Fast HTML-to-text conversion (~10ms). Removes scripts, styles, SVGs, and HTML tags,
+ * collapses whitespace, and truncates. Replaces the 22-50s Gemini extract step.
+ * GPT-4o-mini (the VAPI agent LLM) can find vehicle specs in the resulting plain text.
+ */
+export function stripHtmlToText(html: string): string {
+  let text = html;
+  // Remove content-bearing block tags that are never useful listing content
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, " ");
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, " ");
+  text = text.replace(/<svg[\s\S]*?<\/svg>/gi, " ");
+  text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+  text = text.replace(/<nav[\s\S]*?<\/nav>/gi, " ");
+  text = text.replace(/<footer[\s\S]*?<\/footer>/gi, " ");
+  // Replace block-level tags with newlines so content doesn't merge
+  text = text.replace(/<\/?(div|p|br|li|tr|td|th|h[1-6]|section|article|header|main|aside|blockquote|dt|dd|figcaption)[^>]*>/gi, "\n");
+  // Strip all remaining tags
+  text = text.replace(/<[^>]+>/g, " ");
+  // Decode common HTML entities
+  text = text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
+  // Collapse whitespace: multiple spaces to one, multiple newlines to two max
+  text = text.replace(/[ \t]+/g, " ");
+  text = text.replace(/\n[ \t]*/g, "\n");
+  text = text.replace(/\n{3,}/g, "\n\n");
+  text = text.trim();
+  if (text.length > MAX_STRIPPED_CHARS) {
+    text = text.slice(0, MAX_STRIPPED_CHARS);
+  }
+  return text;
+}

@@ -60,15 +60,15 @@ steps:
       - '--port'
       - '3000'
       - '--memory'
-      - '512Mi'
+      - '2Gi'
       - '--cpu'
-      - '1'
+      - '2'
       - '--timeout'
       - '300'
       - '--max-instances'
       - '10'
       - '--min-instances'
-      - '0'
+      - '1'
 
 # Note: NEXT_PUBLIC_* vars are hardcoded above (they're public anyway, embedded in client bundle)
 # Runtime secrets (VAPI_*, GEMINI_*, HUBSPOT_*, INTEGRATION_ENCRYPTION_KEY, etc.) are loaded from Secret Manager via --set-secrets in deploy step

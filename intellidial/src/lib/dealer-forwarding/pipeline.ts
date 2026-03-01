@@ -12,8 +12,8 @@
  */
 
 import { getProject, getDealer, updateProject, createContacts } from "@/lib/data/store";
-import { fetchVehicleListingHtml } from "@/lib/vehicle-listing/fetch-html";
-import { extractFullTextFromHtml, extractVehicleContextFromUrl, isGeminiConfigured } from "@/lib/gemini/client";
+import { fetchVehicleListingHtml, stripHtmlToText } from "@/lib/vehicle-listing/fetch-html";
+import { extractVehicleContextFromUrl } from "@/lib/gemini/client";
 import { ensureProjectAssistantId } from "@/lib/vapi/ensureAssistant";
 import { createOutboundCall, getPhoneNumberIdForCall, enrichBusinessContextWithDealer } from "@/lib/vapi/client";
 import { buildSystemPrompt } from "@/lib/vapi/prompt-builder";
@@ -25,28 +25,27 @@ export type PipelineResult =
   | { ok: false; error: string };
 
 /**
- * Fetch vehicle context: Playwright first (best content — specs, tire sizes, etc.).
- * Falls back to Gemini URL context if Playwright fails or is blocked.
+ * Fetch vehicle context: Playwright + fast HTML strip (primary), URL context (fallback).
+ * HTML-to-text strip runs in ~10ms, replacing the 22-50s Gemini extract step.
  */
 async function fetchVehicleContext(
   url: string,
   timings: Record<string, number>
 ): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  // Primary: Playwright + Gemini extract (best content quality)
   let t = Date.now();
   const fetchResult = await fetchVehicleListingHtml(url);
   timings.fetchHtml = Date.now() - t;
 
   if (fetchResult.ok) {
     t = Date.now();
-    const extractResult = await extractFullTextFromHtml(fetchResult.html);
-    timings.geminiExtract = Date.now() - t;
-    if (extractResult.ok) {
-      timings.vehicleContextMethod = 0; // 0 = Playwright + Gemini extract
-      console.log("[Pipeline] Playwright succeeded in %dms (fetch: %dms, extract: %dms)", timings.fetchHtml + timings.geminiExtract, timings.fetchHtml, timings.geminiExtract);
-      return extractResult;
+    const text = stripHtmlToText(fetchResult.html);
+    timings.htmlStrip = Date.now() - t;
+    if (text.length > 200) {
+      timings.vehicleContextMethod = 0; // 0 = Playwright + HTML strip
+      console.log("[Pipeline] Playwright + strip succeeded in %dms (fetch: %dms, strip: %dms, chars: %d)", timings.fetchHtml + timings.htmlStrip, timings.fetchHtml, timings.htmlStrip, text.length);
+      return { ok: true, text };
     }
-    console.warn("[Pipeline] Gemini extract failed after Playwright: %s", extractResult.error);
+    console.warn("[Pipeline] Stripped HTML too short (%d chars) — trying URL context", text.length);
   } else {
     console.warn("[Pipeline] Playwright failed in %dms: %s — trying URL context", timings.fetchHtml, fetchResult.error);
   }
@@ -87,9 +86,6 @@ export async function runForwardedEnquiryPipeline(
       return { ok: false, error: "Project has no orgId" };
     }
 
-    if (!isGeminiConfigured()) {
-      return { ok: false, error: "Gemini is not configured (GEMINI_API_KEY)" };
-    }
     const url = enquiry.vehicleLink.startsWith("http")
       ? enquiry.vehicleLink
       : "https://" + enquiry.vehicleLink;
