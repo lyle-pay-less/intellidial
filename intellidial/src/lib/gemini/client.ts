@@ -114,48 +114,83 @@ Output the complete text content of the page. Preserve every piece of informatio
 
 Do not summarise or omit anything. The output will be used by a phone agent to answer questions about handling, safety, specs, and everything else. Output only the extracted text, no headings or labels.`;
 
+/** Strip tracking/analytics query params from listing URLs so Gemini gets a cleaner request. */
+function cleanListingUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const trackingParams = ["vf", "db", "s360", "so", "pl", "pr", "po", "pq", "sp", "utm_source", "utm_medium", "utm_campaign", "fbclid", "gclid"];
+    for (const p of trackingParams) u.searchParams.delete(p);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** Single attempt at Gemini URL context extraction. */
+async function attemptUrlContextExtraction(
+  ai: GoogleGenAI,
+  url: string
+): Promise<ExtractFullTextFromHtmlResult> {
+  const prompt = `${VEHICLE_LISTING_URL_INSTRUCTION}\n\nURL to read: ${url}`;
+  const response = await ai.models.generateContent({
+    model: urlContextModel,
+    contents: prompt,
+    config: {
+      tools: [{ urlContext: {} }],
+      maxOutputTokens: 32768,
+    },
+  });
+  const text = (response as { text?: string })?.text;
+  if (typeof text === "string" && text.trim()) {
+    return { ok: true, text: text.trim() };
+  }
+  const raw = JSON.stringify(response).slice(0, 500);
+  console.warn("[Gemini] urlContext returned empty. Raw response shape:", raw);
+  return { ok: false, error: "No content generated from URL." };
+}
+
 /**
  * Extract full vehicle listing context directly from a URL using Gemini's urlContext tool.
- * Gemini fetches and reads the page itself -- no browser needed. This replaces Playwright + extractFullTextFromHtml
- * in the SLA path (saves ~80s). Uses gemini-2.5-flash which supports URL fetching natively.
+ * Gemini fetches and reads the page itself -- no browser needed.
+ * Retries once on empty response (transient failures are common). Cleans tracking params from the URL.
  */
 export async function extractVehicleContextFromUrl(url: string): Promise<ExtractFullTextFromHtmlResult> {
   const ai = getClient();
   if (!ai) return { ok: false, error: "Gemini is not configured.", code: "API_KEY_INVALID" };
-  const prompt = `${VEHICLE_LISTING_URL_INSTRUCTION}\n\nURL to read: ${url}`;
-  try {
-    const response = await ai.models.generateContent({
-      model: urlContextModel,
-      contents: prompt,
-      config: {
-        tools: [{ urlContext: {} }],
-        maxOutputTokens: 32768,
-      },
-    });
-    const text = (response as { text?: string })?.text;
-    if (typeof text === "string" && text.trim()) {
-      return { ok: true, text: text.trim() };
+  const cleanUrl = cleanListingUrl(url);
+  const MAX_ATTEMPTS = 2;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await attemptUrlContextExtraction(ai, cleanUrl);
+      if (result.ok) return result;
+      if (attempt < MAX_ATTEMPTS) {
+        console.log("[Gemini] urlContext attempt %d empty — retrying", attempt);
+        continue;
+      }
+      return result;
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const str = typeof e === "object" && e ? JSON.stringify(e).concat(raw) : raw;
+      const is403 =
+        raw.includes("403") ||
+        raw.includes("PERMISSION_DENIED") ||
+        str.includes("leaked") ||
+        str.includes("API key") ||
+        str.includes("api key");
+      console.warn("[Gemini] extractVehicleContextFromUrl attempt %d failed: %s", attempt, raw);
+      if (is403) {
+        return {
+          ok: false,
+          error: "Your Gemini API key was revoked or is invalid. Create a new key and set GEMINI_API_KEY.",
+          code: "API_KEY_INVALID",
+        };
+      }
+      if (attempt >= MAX_ATTEMPTS) {
+        return { ok: false, error: raw || "Request failed." };
+      }
     }
-    return { ok: false, error: "No content generated from URL." };
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    const str = typeof e === "object" && e ? JSON.stringify(e).concat(raw) : raw;
-    const is403 =
-      raw.includes("403") ||
-      raw.includes("PERMISSION_DENIED") ||
-      str.includes("leaked") ||
-      str.includes("API key") ||
-      str.includes("api key");
-    console.warn("[Gemini] extractVehicleContextFromUrl failed:", raw);
-    if (is403) {
-      return {
-        ok: false,
-        error: "Your Gemini API key was revoked or is invalid. Create a new key and set GEMINI_API_KEY.",
-        code: "API_KEY_INVALID",
-      };
-    }
-    return { ok: false, error: raw || "Request failed." };
   }
+  return { ok: false, error: "All URL context attempts failed." };
 }
 
 const VEHICLE_LISTING_FULL_TEXT_INSTRUCTION = `You are given the HTML of a vehicle listing page (e.g. AutoTrader, Cars.co.za, or a dealer site).
